@@ -1,0 +1,57 @@
+{
+  "prediction": {
+    "generated_at": "2026-07-31T22:10:56Z",
+    "date": "2026-07-31",
+    "probability": 23,
+    "status": "no",
+    "verdict": "NO — no drop expected today",
+    "reasons": [
+      "No past drop has ever landed on a Friday.",
+      "Last drop was 8 day(s) ago; average gap is 16 days (≈51% of the way to due)."
+    ],
+    "base_rate": 23,
+    "live_boost": 0,
+    "avg_gap_days": 15.8,
+    "last_drop": "2026-07-23",
+    "next_drop_estimate": "2026-08-08",
+    "history_count": 29
+  },
+  "signals": {
+    "pokemoncenter": {
+      "source": "pokemoncenter-uk",
+      "ok": false,
+      "checked_at": "2026-07-31T22:10:14Z",
+      "terms": [],
+      "total_products": 0,
+      "available_now": 0,
+      "note": "backend unreachable (blocked or offline); signal unknown"
+    },
+    "x": {
+      "source": "x-communities",
+      "ok": false,
+      "checked_at": "2026-07-31T22:10:49Z",
+      "volume": 0,
+      "drop_mentions": 0,
+      "posts": [],
+      "note": "no X_BEARER_TOKEN secret configured; X signal unavailable"
+    },
+    "isthereadroptoday": {
+      "source": "isthereadroptoday.com",
+      "ok": false,
+      "checked_at": "2026-07-31T22:10:49Z",
+      "status": "unknown",
+      "past_drops": [],
+      "note": "reference site unreachable (Cloudflare/403); using stored history"
+    }
+  },
+  "source_health": {
+    "pokemoncenter": false,
+    "x": false,
+    "isthereadroptoday": false
+  },
+  "pipeline": {
+    "ran_at": "2026-07-31T22:10:56Z",
+    "reference_drops_added": 0,
+    "logged_today_as_drop": false
+  }
+}

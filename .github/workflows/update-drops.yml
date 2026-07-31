@@ -1,0 +1,60 @@
+name: Update drop prediction
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub may throttle to a coarser cadence under load.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}     # allow manual "Run workflow"
+  push:
+    branches: [main]        # refresh on deploy
+    paths:
+      - "scripts/**"
+      - ".github/workflows/update-drops.yml"
+
+permissions:
+  contents: write           # needed to commit the refreshed data files
+
+concurrency:
+  group: update-drops
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scraper + prediction pipeline
+        env:
+          # Optional: add an X (Twitter) API bearer token as a repo secret
+          # named X_BEARER_TOKEN to enable the X-community signal.
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+        run: python scripts/run.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "drop-radar-bot"
+          git config user.email "actions@github.com"
+          git add data/status.json data/history.json
+          if git diff --cached --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "chore(data): refresh drop prediction [skip ci]"
+            # Retry push with backoff to survive transient contention.
+            n=0
+            until git push; do
+              n=$((n+1)); [ $n -ge 4 ] && exit 1
+              sleep $((2 ** n))
+              git pull --rebase --autostash || true
+            done
+          fi

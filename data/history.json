@@ -1,0 +1,181 @@
+{
+  "drops": [
+    {
+      "date": "2025-05-07",
+      "title": "Twilight Masquerade booster box",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-05-21",
+      "title": "Surging Sparks premium collection",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-06-04",
+      "title": "Prismatic Evolutions booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-06-18",
+      "title": "Twilight Masquerade booster box",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-07-02",
+      "title": "Pokémon Center exclusive plush wave",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-07-16",
+      "title": "Scarlet & Violet ETB restock",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-07-30",
+      "title": "Surging Sparks premium collection",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-08-20",
+      "title": "Prismatic Evolutions booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-09-03",
+      "title": "Prismatic Evolutions booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-09-24",
+      "title": "Scarlet & Violet ETB restock",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-10-08",
+      "title": "Charizard ex Premium Collection",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-10-22",
+      "title": "Temporal Forces booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-11-12",
+      "title": "Scarlet & Violet ETB restock",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-11-26",
+      "title": "Scarlet & Violet ETB restock",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-12-10",
+      "title": "Paldean Fates ETB",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2025-12-31",
+      "title": "151 Ultra Premium Collection",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-01-14",
+      "title": "Temporal Forces booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-01-29",
+      "title": "Pokémon Center exclusive plush wave",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-02-12",
+      "title": "Prismatic Evolutions booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-02-26",
+      "title": "Twilight Masquerade booster box",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-03-11",
+      "title": "Pokémon Center exclusive plush wave",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-03-25",
+      "title": "Temporal Forces booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-04-08",
+      "title": "Temporal Forces booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-04-22",
+      "title": "Stellar Crown ETB restock",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-05-13",
+      "title": "Twilight Masquerade booster box",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-06-03",
+      "title": "Temporal Forces booster bundle",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-06-24",
+      "title": "Twilight Masquerade booster box",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-07-09",
+      "title": "Charizard ex Premium Collection",
+      "region": "UK",
+      "source": "seed"
+    },
+    {
+      "date": "2026-07-23",
+      "title": "Charizard ex Premium Collection",
+      "region": "UK",
+      "source": "seed"
+    }
+  ],
+  "updated_at": "2026-07-31T22:10:56Z",
+  "count": 29,
+  "note": "Seed history for cold start; refined live by isthereadroptoday.com + signals."
+}
