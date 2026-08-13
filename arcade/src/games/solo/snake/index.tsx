@@ -13,6 +13,12 @@ const MIN_MS = 88
 const SPEEDUP_MS = 4
 /** Snake thickness in cell units. */
 const THICKNESS = 0.74
+/**
+ * Corner radius in cell units. Just under half a cell: large enough that a turn
+ * is a visible arc rather than a chamfer, small enough that the body still
+ * clearly follows the grid it is actually moving on.
+ */
+const CORNER_R = 0.46
 
 type Cell = { x: number; y: number }
 
@@ -36,15 +42,62 @@ function placeApple(snake: Cell[]): Cell {
 }
 
 /**
+ * Builds an SVG path through the points with the corners actually curved.
+ *
+ * `strokeLinejoin="round"` only rounds the *outside* of a join — the centre line
+ * still turns through a hard right angle, so the snake reads as sliding
+ * smoothly and then pivoting on the spot. Replacing each interior vertex with a
+ * short quadratic through it curves the travel itself, which is what makes a
+ * turn feel like a turn rather than a corner.
+ *
+ * The radius is clamped to half of each adjoining segment so it degrades
+ * cleanly: the segment behind the head is fractional between ticks, and a fixed
+ * radius there would overshoot and kink.
+ */
+function roundedPath(pts: Cell[], radius: number): string {
+  if (pts.length < 2) return ''
+  if (pts.length === 2) return `M${pts[0].x},${pts[0].y} L${pts[1].x},${pts[1].y}`
+
+  const out: string[] = [`M${pts[0].x},${pts[0].y}`]
+
+  for (let i = 1; i < pts.length - 1; i++) {
+    const prev = pts[i - 1]
+    const here = pts[i]
+    const next = pts[i + 1]
+
+    const inLen = Math.hypot(here.x - prev.x, here.y - prev.y)
+    const outLen = Math.hypot(next.x - here.x, next.y - here.y)
+    const r = Math.min(radius, inLen / 2, outLen / 2)
+
+    // Collinear or degenerate: nothing to round, so keep it a straight run.
+    if (r < 0.001) {
+      out.push(`L${here.x},${here.y}`)
+      continue
+    }
+
+    const a = { x: here.x + ((prev.x - here.x) / inLen) * r, y: here.y + ((prev.y - here.y) / inLen) * r }
+    const b = { x: here.x + ((next.x - here.x) / outLen) * r, y: here.y + ((next.y - here.y) / outLen) * r }
+
+    out.push(`L${a.x.toFixed(3)},${a.y.toFixed(3)}`)
+    out.push(`Q${here.x},${here.y} ${b.x.toFixed(3)},${b.y.toFixed(3)}`)
+  }
+
+  const last = pts[pts.length - 1]
+  out.push(`L${last.x.toFixed(3)},${last.y.toFixed(3)}`)
+  return out.join(' ')
+}
+
+/**
  * The snake is simulated on a grid but drawn as one continuous rounded path,
  * interpolated between ticks.
  *
  * Drawing a square per cell makes the movement read as a series of jumps, which
  * is what "blocky" actually means here — it is the *stepping*, not the corners.
- * So the body is a polyline through cell centres with round caps and joins, and
- * every frame the head is pushed a fraction of a cell towards where it is going
- * while the tail retracts by the same fraction. The logic stays discrete; only
- * the rendering is continuous.
+ * So the body is one stroked path through cell centres, and every frame the head
+ * is pushed a fraction of a cell towards where it is going while the tail
+ * retracts by the same fraction. The logic stays discrete; only the rendering is
+ * continuous. The corners are curved in the path data as well (see
+ * `roundedPath`), so a turn banks rather than pivots.
  *
  * The path is written straight to the SVG element from a rAF loop, so the
  * smoothing costs one attribute write per frame rather than a React render.
@@ -55,7 +108,7 @@ function SnakePlay({ api }: { api: SoloApi }) {
   const [started, setStarted] = useState(false)
   const [length, setLength] = useState(3)
 
-  const pathRef = useRef<SVGPolylineElement>(null)
+  const pathRef = useRef<SVGPathElement>(null)
   const headRef = useRef<SVGCircleElement>(null)
 
   const body = useRef<Cell[]>([
@@ -144,22 +197,24 @@ function SnakePlay({ api }: { api: SoloApi }) {
           : Math.max(0, Math.min(1, (now - tickAt.current) / tickMs.current))
 
         const move = DELTA[heading.current]
-        const points: string[] = []
+        const points: Cell[] = []
 
         // Head, pushed forward into the cell it is entering.
-        points.push(`${cells[0].x + 0.5 + move.x * t},${cells[0].y + 0.5 + move.y * t}`)
-        for (const c of cells) points.push(`${c.x + 0.5},${c.y + 0.5}`)
+        points.push({ x: cells[0].x + 0.5 + move.x * t, y: cells[0].y + 0.5 + move.y * t })
+        for (const c of cells) points.push({ x: c.x + 0.5, y: c.y + 0.5 })
 
         // Tail, retracting by the same fraction — unless the snake just ate, in
         // which case it stays put and the body genuinely grows.
         if (!grewThisTick.current && cells.length >= 2) {
           const last = cells[cells.length - 1]
           const prev = cells[cells.length - 2]
-          points[points.length - 1] =
-            `${last.x + 0.5 + (prev.x - last.x) * t},${last.y + 0.5 + (prev.y - last.y) * t}`
+          points[points.length - 1] = {
+            x: last.x + 0.5 + (prev.x - last.x) * t,
+            y: last.y + 0.5 + (prev.y - last.y) * t,
+          }
         }
 
-        poly.setAttribute('points', points.join(' '))
+        poly.setAttribute('d', roundedPath(points, CORNER_R))
 
         const head = headRef.current
         if (head) {
@@ -197,9 +252,10 @@ function SnakePlay({ api }: { api: SoloApi }) {
             style={{ transformOrigin: `${apple.x + 0.5}px ${apple.y + 0.5}px` }}
           />
 
-          {/* One stroked polyline for the whole body: round joins and caps mean
-              the corners curve instead of stepping. */}
-          <polyline
+          {/* One stroked path for the whole body. The corners are curved in the
+              path data itself, not just at the join, so the snake banks through
+              a turn instead of pivoting on the spot. */}
+          <path
             ref={pathRef}
             fill="none"
             stroke="var(--t-ink)"

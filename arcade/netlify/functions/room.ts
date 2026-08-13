@@ -12,7 +12,7 @@
 import { getStore } from '@netlify/blobs'
 import { siteKey, verifyToken } from '../../server/gateToken.ts'
 import type { RoomReq } from '../../shared/protocol.ts'
-import { handleRoomRequest } from '../../shared/roomHandler.ts'
+import { DEFAULT_HOLD, handleRoomRequest } from '../../shared/roomHandler.ts'
 import type { RoomDoc, RoomStore, Stored } from '../../shared/roomHandler.ts'
 
 const STORE_NAME = 'arcade-rooms'
@@ -60,7 +60,7 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
-    const res = await handleRoomRequest(blobStore(), body)
+    const res = await handleRoomRequest(blobStore(), body, Date.now(), DEFAULT_HOLD)
     return json(res, res.ok ? 200 : statusFor(res.error))
   } catch (error) {
     console.error('room handler failed', error)

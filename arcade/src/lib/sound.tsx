@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { haptic } from './haptics'
 
 /**
  * Synthesised rather than sampled: seven cues that cost zero bytes of payload
@@ -90,6 +91,11 @@ export function SoundProvider({ children }: { children: ReactNode }) {
 
   const play = useCallback(
     (cue: Cue) => {
+      // Before the mute check on purpose. Haptics and sound are separate
+      // channels — playing silently with the phone still tapping back is a
+      // normal, and rather nice, way to play.
+      haptic(cue)
+
       if (!enabled) return
       const ac = audio()
       const bus = busRef.current

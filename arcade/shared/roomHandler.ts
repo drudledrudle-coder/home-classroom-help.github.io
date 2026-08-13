@@ -9,6 +9,7 @@ import type {
   MatchEvent,
   PeerState,
   RoomErrorCode,
+  RoomOkRes,
   RoomReq,
   RoomRes,
   Slot,
@@ -57,6 +58,10 @@ function peersOf(doc: RoomDoc): Record<Slot, PeerState> {
   return { host: one(doc.slots.host), guest: one(doc.slots.guest) }
 }
 
+/** Who is seated, ignoring heartbeats. */
+const membership = (peers: Record<Slot, PeerState>): string =>
+  `${peers.host.joined ? 1 : 0}${peers.guest.joined ? 1 : 0}`
+
 function slotFor(doc: RoomDoc, playerId: string): Slot | null {
   if (doc.slots.host?.playerId === playerId) return 'host'
   if (doc.slots.guest?.playerId === playerId) return 'guest'
@@ -74,7 +79,7 @@ function ok(
   reset: boolean,
   now: number,
   accepted: string[],
-): RoomRes {
+): RoomOkRes {
   return {
     ok: true,
     code: doc.code,
@@ -118,10 +123,43 @@ async function mutate(
   return makeError('CONFLICT', 'Room is busy, retry')
 }
 
+/**
+ * How a held request waits. Injected rather than imported so the same handler
+ * runs under Netlify Functions and the dev server, and so tests can drive it
+ * without real time passing.
+ */
+export type HoldOptions = {
+  /**
+   * Longest a sync may be parked. Deliberately under PRESENCE_TIMEOUT_MS: a
+   * parked request only refreshes presence when it *starts*, so holding longer
+   * than the timeout would make a perfectly healthy player look disconnected to
+   * their opponent.
+   */
+  holdMs: number
+  /** How often a parked request re-reads the room. */
+  pollMs: number
+  sleep: (ms: number) => Promise<void>
+  now: () => number
+}
+
+export const DEFAULT_HOLD: HoldOptions = {
+  // A parked request refreshes presence only when it starts, so this is really
+  // the heartbeat interval. PRESENCE_TIMEOUT_MS allows three of these to be
+  // missed before an opponent is called dropped, which keeps a slow phone from
+  // being mistaken for an absent one.
+  holdMs: 3_000,
+  // Each tick is a store read, so this trades discovery latency against read
+  // volume: 120ms means ~50ms of average discovery delay for ~25 reads a hold.
+  pollMs: 120,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  now: () => Date.now(),
+}
+
 export async function handleRoomRequest(
   store: RoomStore,
   req: RoomReq,
   now: number = Date.now(),
+  hold?: HoldOptions,
 ): Promise<RoomRes> {
   if (!req || typeof req !== 'object' || typeof (req as RoomReq).op !== 'string') {
     return makeError('BAD_REQUEST')
@@ -139,7 +177,7 @@ export async function handleRoomRequest(
     case 'join':
       return joinRoom(store, code, req.playerId, now)
     case 'sync':
-      return syncRoom(store, code, req, now)
+      return syncRoom(store, code, req, now, hold)
     case 'reset':
       return resetRoom(store, code, req.playerId, now)
     case 'leave':
@@ -198,10 +236,81 @@ async function syncRoom(
   code: string,
   req: Extract<RoomReq, { op: 'sync' }>,
   now: number,
+  hold?: HoldOptions,
 ): Promise<RoomRes> {
   const push = Array.isArray(req.push) ? req.push : []
   if (push.length > MAX_PUSH_EVENTS) return makeError('TOO_BIG')
   if (push.length && JSON.stringify(push).length > MAX_PUSH_BYTES) return makeError('TOO_BIG')
+
+  const first = await syncOnce(store, code, req, now)
+
+  // Answer straight away if there is anything to say, or if the caller did not
+  // ask to wait. Only a genuinely empty sync is worth parking.
+  if (!hold || !req.wait || !first.ok) return first
+  if (first.events.length || first.reset || first.accepted.length) {
+    return { ...first, waited: false }
+  }
+
+  return holdOpen(store, code, req, first, hold)
+}
+
+/**
+ * Park an empty sync until the room changes.
+ *
+ * Presence was already refreshed by the `syncOnce` above, and this loop only
+ * *reads* — parking must not turn one sync into forty writes, which would cost
+ * more than the polling it replaces and make write contention far likelier.
+ */
+async function holdOpen(
+  store: RoomStore,
+  code: string,
+  req: Extract<RoomReq, { op: 'sync' }>,
+  first: Extract<RoomRes, { ok: true }>,
+  hold: HoldOptions,
+): Promise<RoomRes> {
+  const deadline = hold.now() + hold.holdMs
+  const since = Number.isFinite(req.since) ? Number(req.since) : 0
+  // Membership only — deliberately *not* the whole peer record.
+  //
+  // `lastSeen` moves every time either player syncs, so waking on it made each
+  // client's hold fire on the other's presence write: A syncs, B wakes, B syncs,
+  // A wakes, for ever. That ping-pong turned one parked request into a
+  // continuous write loop, which costs more than the polling it replaced and
+  // adds contention on every write. A player arriving or leaving is a real
+  // change worth waking for; a heartbeat is not.
+  const before = membership(first.peers)
+
+  while (hold.now() < deadline) {
+    await hold.sleep(hold.pollMs)
+
+    const stored = await store.read(code)
+    // The room went away under us; let the client re-handshake.
+    if (!stored) return makeError('NO_ROOM')
+
+    const doc = stored.doc
+    const slot = slotFor(doc, req.playerId)
+    if (!slot) return makeError('NOT_A_MEMBER')
+
+    const stale = req.epoch !== doc.epoch
+    const events = stale ? doc.events : doc.events.filter((e) => e.seq > since)
+    const peersChanged = membership(peersOf(doc)) !== before
+
+    if (events.length || stale || peersChanged) {
+      const now = hold.now()
+      return { ...ok(doc, slot, events, stale, now, []), waited: true }
+    }
+  }
+
+  return { ...first, now: hold.now(), waited: true }
+}
+
+async function syncOnce(
+  store: RoomStore,
+  code: string,
+  req: Extract<RoomReq, { op: 'sync' }>,
+  now: number,
+): Promise<RoomRes> {
+  const push = Array.isArray(req.push) ? req.push : []
 
   return mutate(store, code, now, (doc) => {
     const slot = slotFor(doc, req.playerId)

@@ -14,8 +14,18 @@ const VISIBLE_ROWS = 9
 const START_SPEED = 46
 const SPEED_STEP = 2.4
 const MAX_SPEED = 105
-/** Slack allowed before a drop counts as losing width. */
-const PERFECT_EPS = 1.2
+/**
+ * Slack allowed before a drop counts as losing width, in percent of the board.
+ *
+ * Deliberately generous. A perfect drop is meant to be a thing you can *aim*
+ * for and hit fairly often — it is the reward loop of the game — so the window
+ * is a couple of percent rather than a pixel hunt.
+ */
+const PERFECT_EPS = 2.6
+/** Perfect drops in a row before the block starts growing back. */
+const STREAK_TO_GROW = 2
+/** How much width each perfect beyond the threshold returns. */
+const GROW_BY = 5.5
 
 type Row = { x: number; w: number }
 
@@ -29,6 +39,12 @@ function StackPlay({ api }: { api: SoloApi }) {
   const dead = useRef(false)
   const rowsRef = useRef(rows)
   rowsRef.current = rows
+
+  // Streak lives in a ref for the drop handler and in state for the readout —
+  // the handler must not read a stale closure, and the label must re-render.
+  const streak = useRef(0)
+  const [streakShown, setStreak] = useState(0)
+  const [flash, setFlash] = useState(0)
 
   // The slider is the only thing moving every frame, so it is written straight
   // to the DOM node. Routing it through React state would re-render the whole
@@ -82,13 +98,34 @@ function StackPlay({ api }: { api: SoloApi }) {
       return
     }
 
-    sound.play(below.w - overlap < PERFECT_EPS ? 'confirm' : 'pop')
+    const perfect = below.w - overlap < PERFECT_EPS
+    sound.play(perfect ? 'confirm' : 'pop')
 
-    const next = [...stack, { x: left, w: overlap }]
+    // A streak of clean drops gives width back, the way the 3D stack games do.
+    // Without it the tower only ever narrows, so a good run is punished at
+    // exactly the point the player has started to master the timing.
+    let width = overlap
+    let left2 = left
+    if (perfect) {
+      streak.current += 1
+      if (streak.current >= STREAK_TO_GROW) {
+        // Never wider than the base, and never wider than the board.
+        const grown = Math.min(START_W, Math.min(WIDTH, width + GROW_BY))
+        // Grow around the centre so the tower stays plumb rather than drifting.
+        left2 = Math.max(0, Math.min(WIDTH - grown, left - (grown - width) / 2))
+        width = grown
+        setFlash((n) => n + 1)
+      }
+    } else {
+      streak.current = 0
+    }
+    setStreak(streak.current)
+
+    const next = [...stack, { x: left2, w: width }]
     setRows(next)
     api.setScore(next.length - 1)
     // Restart the sweep from whichever wall it was heading towards.
-    pos.current = dir.current > 0 ? 0 : WIDTH - overlap
+    pos.current = dir.current > 0 ? 0 : WIDTH - width
   }, [api, sound])
 
   useKeyAction(['Space', 'Enter', 'ArrowDown'], drop, true)
@@ -100,7 +137,19 @@ function StackPlay({ api }: { api: SoloApi }) {
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-3 sm:px-6">
       <div className="flex items-baseline justify-between pb-3">
         <span className="chrome text-muted">Height {rows.length - 1}</span>
-        <span className="chrome text-muted/60">Tap to drop</span>
+        {streakShown >= STREAK_TO_GROW ? (
+          <motion.span
+            key={streakShown}
+            initial={{ opacity: 0, y: 3 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={springSnap}
+            className="chrome text-accent"
+          >
+            Perfect ×{streakShown}
+          </motion.span>
+        ) : (
+          <span className="chrome text-muted/60">Tap to drop</span>
+        )}
       </div>
 
       <Press
@@ -111,6 +160,17 @@ function StackPlay({ api }: { api: SoloApi }) {
         className="no-select relative w-full flex-1 overflow-hidden rounded-2xl border border-line bg-surface"
         style={{ minHeight: 'min(50vh, 25rem)' }}
       >
+        {/* A quick pulse when a streak pays out, so the reward is felt at the
+            moment it happens rather than only read off the counter. */}
+        <motion.div
+          key={flash}
+          initial={flash ? { opacity: 0.5 } : false}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.42 }}
+          className="pointer-events-none absolute inset-0"
+          style={{ backgroundColor: 'var(--t-accent-wash)' }}
+        />
+
         <div
           ref={sliderRef}
           className="absolute rounded-sm"

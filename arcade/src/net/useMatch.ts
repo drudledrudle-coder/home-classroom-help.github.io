@@ -4,10 +4,11 @@ import { OTHER, PRESENCE_TIMEOUT_MS } from '../../shared/protocol'
 import type { AnyGameModule, BaseGameState, GameClock, GameCtx } from '../games/types'
 import { makeSeed } from '../lib/random'
 import { EV_GAME, EV_READY, EV_START, EV_TIMEUP, readShellState } from './shellState'
-import type { ConnState, Transport } from './types'
+import type { ConnState, NetStats, Transport } from './types'
 
 export type MatchApi = {
   conn: ConnState
+  stats: NetStats
   code: string
   slot: Slot
   isBot: boolean
@@ -40,7 +41,7 @@ export function useMatch(transport: Transport, modules: Record<GameId, AnyGameMo
     return () => clearInterval(id)
   }, [])
 
-  const { events, pending, peers, slot, clockOffset } = snapshot
+  const { events, pending, peers, slot, clockOffset, stats } = snapshot
 
   /** Confirmed log plus unacknowledged local events, in order. */
   const log = useMemo(
@@ -142,6 +143,7 @@ export function useMatch(transport: Transport, modules: Record<GameId, AnyGameMo
 
   return {
     conn: snapshot.conn,
+    stats,
     code: snapshot.code,
     slot,
     isBot: transport.kind === 'bot',

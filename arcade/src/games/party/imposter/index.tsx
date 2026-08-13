@@ -22,9 +22,47 @@ function newRound(players: number): Round {
   }
 }
 
+const NAMES_KEY = 'arcade.imposter.names'
+
+/** Remembered between rounds and sessions — nobody wants to retype six names. */
+function loadNames(): string[] {
+  try {
+    const raw = localStorage.getItem(NAMES_KEY)
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null
+    return Array.isArray(parsed) ? parsed.filter((n): n is string => typeof n === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function saveNames(names: string[]): void {
+  try {
+    localStorage.setItem(NAMES_KEY, JSON.stringify(names))
+  } catch {
+    /* storage disabled; the names still hold for this session */
+  }
+}
+
 function ImposterPlay({ onExit }: { onExit: () => void }) {
   const sound = useSound()
   const [players, setPlayers] = useState(4)
+  const [names, setNames] = useState<string[]>(loadNames)
+
+  /** A blank entry falls back to the position, so names are always optional. */
+  const nameOf = useCallback(
+    (i: number) => names[i]?.trim() || `Player ${i + 1}`,
+    [names],
+  )
+
+  const rename = useCallback((i: number, value: string) => {
+    setNames((prev) => {
+      const next = [...prev]
+      while (next.length <= i) next.push('')
+      next[i] = value.slice(0, 14)
+      saveNames(next)
+      return next
+    })
+  }, [])
   const [stage, setStage] = useState<Stage>('setup')
   const [round, setRound] = useState<Round>(() => newRound(4))
   const [current, setCurrent] = useState(0)
@@ -99,12 +137,31 @@ function ImposterPlay({ onExit }: { onExit: () => void }) {
               </Press>
             </div>
 
-            <p className="mt-5 text-[0.875rem] leading-relaxed text-muted">
+            {/* Names are optional: leave one blank and it stays "Player n".
+                Capped in height so a ten-player game does not push the deal
+                button off the screen. */}
+            <div className="mt-4 max-h-[32vh] overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-2">
+              {Array.from({ length: players }, (_, i) => (
+                <label key={i} className="flex items-center gap-3 px-1 py-1">
+                  <span className="chrome w-6 shrink-0 text-muted/60 tabular-nums">{i + 1}</span>
+                  <input
+                    value={names[i] ?? ''}
+                    onChange={(e) => rename(i, e.target.value)}
+                    placeholder={`Player ${i + 1}`}
+                    aria-label={`Name for player ${i + 1}`}
+                    maxLength={14}
+                    className="h-10 w-full min-w-0 rounded-lg bg-bg/60 px-3 text-[0.9375rem] text-ink outline-none placeholder:text-muted/50 focus-visible:outline-2 focus-visible:outline-accent"
+                  />
+                </label>
+              ))}
+            </div>
+
+            <p className="mt-4 text-[0.875rem] leading-relaxed text-muted">
               Everyone gets the same secret word except one person, who only sees the category
               and has to bluff. Hold to read yours, then pass the phone on.
             </p>
 
-            <div className="mt-7">
+            <div className="mt-6">
               <Button size="lg" full onClick={begin}>
                 Deal the words
               </Button>
@@ -120,7 +177,7 @@ function ImposterPlay({ onExit }: { onExit: () => void }) {
             className="flex flex-col"
           >
             <span className="chrome text-muted">
-              Player {current + 1} of {players}
+              {nameOf(current)} — {current + 1} of {players}
             </span>
 
             {/* Hold rather than tap: the word is only on screen while a finger
@@ -154,7 +211,20 @@ function ImposterPlay({ onExit }: { onExit: () => void }) {
                   >
                     {isImposter ? (
                       <>
-                        <span className="chrome text-accent">You are the imposter</span>
+                        {/* Fixed red, never the accent. This is the one line in
+                            the app that must be unmistakable at a glance while
+                            a phone is being passed around, and the player can
+                            set the accent to anything — including a colour that
+                            would make "you are the imposter" look reassuring. */}
+                        <span
+                          className="chrome rounded-md px-2 py-1"
+                          style={{
+                            color: 'var(--t-danger)',
+                            backgroundColor: 'var(--t-danger-wash)',
+                          }}
+                        >
+                          You are the imposter
+                        </span>
                         <span className="display text-[2rem] leading-tight">
                           {round.secret.category}
                         </span>
@@ -255,8 +325,8 @@ function ImposterPlay({ onExit }: { onExit: () => void }) {
               className="mt-6 rounded-2xl border border-line bg-surface p-5"
             >
               <span className="chrome text-muted">The imposter was</span>
-              <p className="display mt-1.5 text-[2rem] text-accent">
-                Player {round.imposter + 1}
+              <p className="display mt-1.5 text-[2rem]" style={{ color: 'var(--t-danger)' }}>
+                {nameOf(round.imposter)}
               </p>
             </motion.div>
 

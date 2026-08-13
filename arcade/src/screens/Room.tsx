@@ -1,8 +1,9 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { GameId, RoomErrorCode } from '../../shared/protocol'
 import { Button } from '../components/Button'
 import { CodeChip } from '../components/CodeChip'
+import { ConnectionMeter } from '../components/ConnectionMeter'
 import { GameShell } from '../components/GameShell'
 import { TopBar } from '../components/TopBar'
 import { GAMES } from '../games/registry'
@@ -79,10 +80,17 @@ export function Room({
   }, [code, isBot])
 
   // Entering from a "play this game now" tap on the home screen.
+  //
+  // Strictly once. Without the latch this fires again the moment the game is
+  // cleared, so "Pick another game" put you straight back into the game you
+  // just left — the picker appeared for a frame and was immediately overridden,
+  // which read as the button doing nothing at all.
+  const autoSelected = useRef(false)
   useEffect(() => {
-    if (!autoSelect) return
+    if (!autoSelect || autoSelected.current) return
     if (match.gameId || match.slot !== 'host') return
     if (match.conn.phase !== 'live') return
+    autoSelected.current = true
     match.selectGame(autoSelect)
   }, [autoSelect, match])
 
@@ -128,11 +136,26 @@ export function Room({
 
   const showWaiting = !match.isBot && !match.opponentPresent && !match.started
 
+  // Shows a move still travelling, so a slow round trip reads as motion rather
+  // than a dead screen.
+  const syncing =
+    match.started && match.state?.phase === 'playing' && match.stats.awaiting
+
   return (
     <Screen>
       <TopBar
         onBack={onExit}
         center={match.isBot ? <BotBadge /> : <CodeChip code={match.code} />}
+        // Solo has no network, so a connection meter there would be noise.
+        trailing={
+          match.isBot ? null : (
+            <ConnectionMeter
+              conn={match.conn}
+              stats={match.stats}
+              syncing={syncing}
+            />
+          )
+        }
       />
 
       {match.conn.phase === 'reconnecting' ? <ReconnectingBar /> : null}

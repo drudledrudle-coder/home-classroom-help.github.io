@@ -75,9 +75,12 @@ export function NerveView({ state, ctx, send }: GameViewProps<NerveState>) {
               }}
               className="relative grid aspect-square place-items-center rounded-xl border disabled:pointer-events-none"
               style={{
-                borderColor: isBomb ? 'var(--t-accent)' : 'var(--t-line)',
+                // The bomb is red in every theme and under every accent. It is
+                // the one tile that costs you everything, so it must never take
+                // on a colour the player chose because they liked it.
+                borderColor: isBomb ? 'var(--t-danger)' : 'var(--t-line)',
                 backgroundColor: isBomb
-                  ? 'var(--t-accent-wash)'
+                  ? 'var(--t-danger-wash)'
                   : isOpen
                     ? 'transparent'
                     : 'var(--t-surface)',

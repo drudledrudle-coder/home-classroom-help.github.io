@@ -23,7 +23,37 @@ export type TransportState = {
   peers: Record<Slot, PeerState>
   /** serverNow - clientNow, for shared countdowns. */
   clockOffset: number
+  /** Live connection measurements, for the readout and the quality dot. */
+  stats: NetStats
 }
+
+export type NetStats = {
+  /** Smoothed round trip of a non-held request, in ms. 0 until measured. */
+  rtt: number
+  /** Most recent round trip, unsmoothed. */
+  lastRtt: number
+  /**
+   * How long an opponent's event took to reach us: our clock (corrected for
+   * skew) minus the server's stamp on the event. This is the number that
+   * actually decides whether the game feels immediate.
+   */
+  lag: number
+  /** True once the server has proved it honours held requests. */
+  push: boolean
+  /** Requests sent this session, for the cost side of the trade. */
+  requests: number
+  /** We have a local event the sequencer has not acknowledged yet. */
+  awaiting: boolean
+}
+
+export const emptyStats = (): NetStats => ({
+  rtt: 0,
+  lastRtt: 0,
+  lag: 0,
+  push: false,
+  requests: 0,
+  awaiting: false,
+})
 
 export interface Transport {
   readonly kind: 'online' | 'bot'
@@ -38,10 +68,16 @@ export interface Transport {
   stop(): void
 }
 
+/**
+ * Fallback cadence only.
+ *
+ * The transport long-polls: it leaves one request parked and the server answers
+ * the moment anything happens, so an opponent's move arrives on the next network
+ * hop rather than on the next tick. These delays are what it drops back to when
+ * the server does not honour a held request — an older deployment, or a proxy
+ * that buffers the response.
+ */
 export const TEMPO_MS: Record<Tempo, number> = {
-  // Fast enough that an opponent's move lands within a frame or two of feeling
-  // instant, slow enough to stay inside Netlify's free function budget. See the
-  // polling note in the README before lowering this.
   active: 220,
   lobby: 900,
   idle: 2_500,

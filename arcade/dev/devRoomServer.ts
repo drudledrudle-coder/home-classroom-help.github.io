@@ -18,7 +18,7 @@ import {
   verifyToken,
 } from '../server/gateToken.ts'
 import type { RoomReq } from '../shared/protocol.ts'
-import { handleRoomRequest } from '../shared/roomHandler.ts'
+import { DEFAULT_HOLD, handleRoomRequest } from '../shared/roomHandler.ts'
 import type { RoomDoc, RoomStore, Stored } from '../shared/roomHandler.ts'
 
 const ROOM_ROUTE = '/api/room'
@@ -109,7 +109,7 @@ export function devRoomServer(): Plugin {
 
     try {
       const body = JSON.parse(await readBody(req)) as RoomReq
-      const result = await handleRoomRequest(store, body)
+      const result = await handleRoomRequest(store, body, Date.now(), DEFAULT_HOLD)
       send(result, result.ok ? 200 : 400)
     } catch (error) {
       console.error('[dev room]', error)

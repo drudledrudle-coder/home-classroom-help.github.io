@@ -183,7 +183,15 @@ export function ReactionView({ state, ctx, send }: GameViewProps<ReactionState>)
             >
               {myTap?.foul ? (
                 <>
-                  <span className="display text-[2.5rem] text-accent sm:text-[3rem]">Too early</span>
+                  {/* Fixed red rather than the accent: this is the one outcome
+                      where the player lost the round by their own hand, and it
+                      must not be tinted by whichever colour they picked. */}
+                  <span
+                    className="display text-[2.5rem] sm:text-[3rem]"
+                    style={{ color: 'var(--t-danger)' }}
+                  >
+                    Too early
+                  </span>
                   <span className="chrome text-muted">Round lost</span>
                 </>
               ) : (

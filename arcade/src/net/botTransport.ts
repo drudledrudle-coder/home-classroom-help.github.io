@@ -3,6 +3,7 @@ import { currentDifficulty } from '../lib/difficulty'
 import type { Difficulty } from '../lib/difficulty'
 import { EV_READY, readShellState } from './shellState'
 import type { Transport, TransportState } from './types'
+import { emptyStats } from './types'
 
 export type BotApi = {
   /** Append an event as the opponent, optionally after a human-ish delay. */
@@ -61,6 +62,8 @@ export function createBotTransport(pick: (id: GameId) => BotFactory | null): Tra
     // The bot never disconnects, so presence is pinned on.
     peers: { host: { joined: true, lastSeen: now() }, guest: { joined: true, lastSeen: now() } },
     clockOffset: 0,
+    // No network at all, so there is nothing to measure and nothing to show.
+    stats: emptyStats(),
   }
 
   const emit = () => {

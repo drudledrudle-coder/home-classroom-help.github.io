@@ -77,6 +77,15 @@ export type SyncReq = {
   /** Epoch the client believes it is on; a mismatch forces a full resend. */
   epoch: number
   push?: DraftEvent[]
+  /**
+   * Hold the request open until something actually happens.
+   *
+   * This is what turns the protocol from polling into push: instead of asking
+   * every 220ms and almost always being told "nothing", the client leaves one
+   * request parked and the server answers the moment the opponent writes. The
+   * event arrives on the next network hop rather than on the next tick.
+   */
+  wait?: boolean
 }
 
 /** Clears the event log and bumps the epoch, so a rematch starts from zero. */
@@ -114,6 +123,12 @@ export type RoomOkRes = {
   /** Server clock, so clients can correct for skew on shared countdowns. */
   now: number
   peers: Record<Slot, PeerState>
+  /**
+   * True when the server actually held this request open. Its absence tells a
+   * client talking to an older deployment that long-polling is not available,
+   * so it can fall back to timed polling instead of asking every few seconds.
+   */
+  waited?: boolean
   /** Ids from `push` that the server accepted, so the client can retire them. */
   accepted: string[]
 }
@@ -153,7 +168,14 @@ export function normalizeCode(raw: string): string | null {
 /* -------------------------------------------------------------------------- */
 
 /** A peer that has not synced within this window is treated as gone. */
-export const PRESENCE_TIMEOUT_MS = 6_000
+/**
+ * A client parked on a held sync only refreshes its presence when that request
+ * starts, so this must tolerate several missed heartbeats — otherwise a player
+ * sitting on a perfectly good connection gets reported as dropped. Three holds'
+ * worth of margin, at the cost of a genuinely dead peer taking that long to
+ * notice.
+ */
+export const PRESENCE_TIMEOUT_MS = 9_000
 /** Rooms are abandoned, not deleted; this is when we stop honouring them. */
 export const ROOM_TTL_MS = 3 * 60 * 60 * 1000
 export const MAX_EVENTS_PER_EPOCH = 2_000

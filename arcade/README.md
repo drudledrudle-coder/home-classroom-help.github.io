@@ -24,7 +24,7 @@ so the app is never a dead end.
 | --- | --- | --- |
 | Merge | Swipe to slide every tile; equal tiles fuse into one worth double. | Points |
 | Snake | Eat the dot to grow — walls and your own tail are fatal. | Apples |
-| Stack | Tap to drop the sliding block; overhang is sliced off. | Blocks |
+| Stack | Tap to drop the sliding block; overhang is sliced off, clean drops give width back. | Blocks |
 | Roll | Steer a ball through gaps in an endless run that keeps speeding up. | Gates |
 | Recall | Repeat a sequence of pads that grows by one each round. | Rounds |
 | Odd One Out | One square is a slightly different shade — tap it before the timer. | Levels |
@@ -158,6 +158,11 @@ so the pointer half is free; the keyboard half is not, and is wired per game.
 | Word Sprint | Tap the letters | Type, Enter, Backspace |
 | Dot Grab, Imposter | Tap | — (spatial and physical; a keyboard adds nothing) |
 
+Imposter takes a name per player on its setup screen. They are optional — a blank one
+stays "Player n" — and they are remembered between rounds and sessions, because
+retyping six names every round is exactly the kind of friction that stops a group
+playing a second time.
+
 Grid navigation moves real DOM focus rather than tracking a cursor in React, so
 Enter and Space activate natively, the existing focus ring shows where you are, and
 screen readers follow along. Disabled cells are stepped over rather than collapsed,
@@ -184,6 +189,33 @@ anywhere jumps to the nearest notch and keeps tracking to release, identically o
 every platform, with a 44px hit area. The `<input type="range">` is still there for
 the keyboard and the accessibility tree, with pointer events off so it cannot
 compete for the gesture.
+
+## Feel
+
+Haptics ride the *same cue points as the sound*, inside `sound.play`, so a game never
+asks for one separately and the two cannot drift apart — every existing cue site got
+haptics for free. They are a separate channel from audio: muted with the phone still
+tapping back is a normal way to play, so the haptic fires before the mute check.
+
+On by default where supported, unlike sound: a haptic is private and brief, where
+sound on load is hostile. Suppressed under `prefers-reduced-motion` — someone who
+asked for less motion did not ask for a buzzing phone.
+
+Support is genuinely partial. Android Chrome implements the Vibration API; **iOS
+Safari does not expose it at all**, so on an iPhone this is a no-op whatever the
+toggle says. The toggle therefore only renders where the API exists, rather than
+offering a switch that visibly does nothing.
+
+## Danger is not the accent
+
+`--t-danger` is a fixed red, defined per theme and deliberately independent of the
+accent the player picked. Anything that means "this went wrong for you" uses it:
+"You are the imposter", Reaction's *Too early*, Nerve's bomb tile, and a failing
+connection.
+
+The reason is that the accent is a preference. Pick green and, without this, "you are
+the imposter" would arrive in a colour that reads as reassurance — the one line in
+the app that has to be unmistakable at a glance while a phone is being handed around.
 
 ## Devices
 
@@ -256,19 +288,61 @@ Two subtleties that are easy to get wrong, both marked in the code:
 - There is no `pagehide` teardown, for the same reason: releasing the seat on unload
   races the reloaded page's rejoin. Presence expiry covers a real tab close.
 
-Transport is `POST /api/room` polling, adaptive: 220ms during a live match, 900ms in
-the lobby, paused when the tab is hidden. Push and poll share one round trip.
-Optimistic local events are applied instantly and reconciled when the log confirms
-them.
+### Push, not polling
 
-**A note on the free tier.** Two players in an active match cost roughly 9
-invocations per second between them, so a 2-minute game is about 1,100 of Netlify's
-125k free monthly invocations — call it 100 games a month. If you outgrow that, the
-cheapest fix is raising `TEMPO_MS.active` in `src/net/types.ts`; the honest fix is
-swapping in a websocket transport. That swap is contained: `src/net/types.ts` defines
-the `Transport` interface, and `onlineTransport.ts` and `botTransport.ts` are the two
+Transport is `POST /api/room`, **long-polled**. The client leaves one request parked
+and the server answers the moment the room changes, so an opponent's move arrives on
+the next network hop instead of on the next tick. It is push semantics over plain
+HTTP — which matters here, because Netlify is static hosting plus functions and there
+is no persistent socket to hold.
+
+Measured between two real browser clients on one machine (so this isolates protocol
+delay; a phone adds its own round trip on top):
+
+| | Polling (220ms) | Long-poll |
+| --- | --- | --- |
+| Opponent sees your move | median 135ms, avg 159ms, worst 533ms | median **90ms**, avg 98ms, worst **129ms** |
+| Your own screen | median 51ms | median 47ms |
+| Requests per 2-min match | 1,075 | **77** |
+
+The worst case matters more than the median: polling's spread came from landing just
+after a tick, and that variance is what reads as "laggy" even when the average is
+fine.
+
+Three details make it work:
+
+- **A push never waits.** A request carrying local events is sent immediately and a
+  parked one is aborted to make room for it, so your own move is never stuck behind
+  someone else's hold.
+- **Parked requests only read.** Presence is refreshed when the request starts and
+  the hold loop does not write, or one parked sync would cost more than the polling
+  it replaced.
+- **Waking is on membership, not heartbeats.** `lastSeen` moves on every sync, so
+  waking on the whole peer record made each client's hold fire on the other's
+  presence write — A syncs, B wakes, B syncs, A wakes, for ever. That ping-pong turned
+  the hold into a continuous write loop and wiped out the latency gain.
+
+`PRESENCE_TIMEOUT_MS` is sized against the hold: a parked client only heartbeats when
+its request starts, so the timeout allows three missed beats. Lower the hold and you
+can lower the timeout with it.
+
+**On the free tier**, the same 2-minute match went from ~1,100 invocations to ~77.
+Netlify's 125k monthly allowance was worth roughly 100 games; it is now bound by
+runtime instead (a held request occupies the function), which works out around 1,500
+games a month.
+
+If you want a true socket, the swap is contained: `src/net/types.ts` defines the
+`Transport` interface, and `onlineTransport.ts` and `botTransport.ts` are the two
 implementations. A Supabase Realtime version would be a third file implementing the
 same six methods, with no changes to any game.
+
+### Seeing the numbers
+
+The connection meter in the top bar of an online room shows three bars graded on
+smoothed round trip, and tapping it opens the live measurements — ping, last round
+trip, how long the opponent's most recent move took to arrive, whether the hold is
+being honoured (`push` vs `polling`), and the request count. Solo has no meter,
+because solo has no network.
 
 ---
 

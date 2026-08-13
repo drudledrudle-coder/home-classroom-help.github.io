@@ -51,6 +51,13 @@
   --t-accent-ink: #ffffff;
   /* Derived, so it follows whichever accent the player picked. */
   --t-accent-wash: color-mix(in srgb, var(--t-accent) 13%, var(--t-bg));
+  /* Fixed red, independent of the chosen accent. Danger has to *mean* danger:
+     if the player picks a green accent, "you are the imposter" and a failing
+     connection must not turn green with it. Tuned per theme for contrast
+     rather than reused, so it stays legible on both grounds. */
+  --t-danger: #c81e1e;
+  --t-danger-wash: color-mix(in srgb, var(--t-danger) 12%, var(--t-bg));
+  --t-danger-ink: #ffffff;
   --t-shadow: 0 1px 2px rgb(23 21 15 / 0.05);
 }
 
@@ -66,6 +73,9 @@
   --t-accent: #ff4a2b;
   --t-accent-ink: #0b0b0c;
   --t-accent-wash: color-mix(in srgb, var(--t-accent) 18%, var(--t-bg));
+  --t-danger: #ff5a5a;
+  --t-danger-wash: color-mix(in srgb, var(--t-danger) 17%, var(--t-bg));
+  --t-danger-ink: #180a0a;
   --t-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
 }
 
@@ -83,6 +93,9 @@
   --color-accent: var(--t-accent);
   --color-accent-ink: var(--t-accent-ink);
   --color-accent-wash: var(--t-accent-wash);
+  --color-danger: var(--t-danger);
+  --color-danger-wash: var(--t-danger-wash);
+  --color-danger-ink: var(--t-danger-ink);
 }
 
 @layer base {

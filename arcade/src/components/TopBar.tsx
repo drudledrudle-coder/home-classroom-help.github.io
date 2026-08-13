@@ -30,7 +30,16 @@ function IconToggle({
   )
 }
 
-export function TopBar({ onBack, center }: { onBack?: () => void; center?: ReactNode }) {
+export function TopBar({
+  onBack,
+  center,
+  trailing,
+}: {
+  onBack?: () => void
+  center?: ReactNode
+  /** Room-only extras, e.g. the connection meter. */
+  trailing?: ReactNode
+}) {
   const { theme, toggle } = useTheme()
   const sound = useSound()
 
@@ -76,6 +85,7 @@ export function TopBar({ onBack, center }: { onBack?: () => void; center?: React
         <div className="ml-2 flex min-w-0 items-center">{center}</div>
 
         <div className="flex flex-1 shrink-0 items-center justify-end gap-0.5">
+          {trailing}
           <AccentPicker />
           <IconToggle
             onClick={sound.toggle}
