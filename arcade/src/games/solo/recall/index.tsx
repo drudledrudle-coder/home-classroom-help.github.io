@@ -89,6 +89,19 @@ function RecallPlay({ api }: { api: SoloApi }) {
     [phase, api, sound, clearTimers],
   )
 
+  // 1-4 mirror the pads, reading left to right, top to bottom.
+  useEffect(() => {
+    if (phase !== 'repeat') return
+    const onKey = (event: KeyboardEvent) => {
+      const pad = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(event.code)
+      if (pad < 0 || event.metaKey || event.ctrlKey || event.altKey) return
+      event.preventDefault()
+      press(pad)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [phase, press])
+
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-3 sm:px-6">
       <div className="flex items-baseline justify-between pb-3">
@@ -131,7 +144,7 @@ function RecallPlay({ api }: { api: SoloApi }) {
       </div>
 
       <p className="pt-4 text-center text-[0.8125rem] text-muted short:hidden">
-        Watch the sequence, then repeat it. It grows by one every round.
+        Watch, then repeat. Tap the pads or press 1–4.
       </p>
     </div>
   )

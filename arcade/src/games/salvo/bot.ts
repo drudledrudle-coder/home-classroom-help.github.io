@@ -1,3 +1,4 @@
+import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
 import { EV_RESULT, EV_SHOT, GRID, alreadyShot, makeFleet, replay } from './logic'
@@ -56,7 +57,9 @@ export const salvoBot: BotFactory = () => {
       // Work outwards from an unfinished hit if there is one.
       const live = mine.filter((s) => s.hit).flatMap((s) => neighbours(s.i)).filter(open)
       let target: number
-      if (live.length && rand() > 0.12) {
+      // How reliably it follows up a hit instead of firing at random.
+      const focus = scale(ctx.difficulty, 0.45, 0.96)
+      if (live.length && rand() < focus) {
         target = live[Math.floor(rand() * live.length)]
       } else {
         const all: number[] = []

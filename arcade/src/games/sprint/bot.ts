@@ -1,3 +1,4 @@
+import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
 import { rackFor, spellableWords } from './dictionary'
@@ -8,7 +9,8 @@ import { DURATION_MS, EV_WORD } from './logic'
  * the short ones a person actually spots under time pressure, spread unevenly
  * across the round rather than on a metronome.
  */
-const TARGET_WORDS = 13
+const TARGET_EASY = 5
+const TARGET_HARD = 19
 const FIRST_WORD_MS = 2_600
 /** Stop before the buzzer so the last word does not land after time. */
 const LAST_WORD_MS = DURATION_MS - 3_000
@@ -40,9 +42,12 @@ export const sprintBot: BotFactory = () => {
           if (!picks.includes(word)) picks.push(word)
         }
       }
-      take(short, Math.round(TARGET_WORDS * 0.6))
-      take(mid, Math.round(TARGET_WORDS * 0.3))
-      take(long, Math.round(TARGET_WORDS * 0.1))
+      const target = Math.round(scale(ctx.difficulty, TARGET_EASY, TARGET_HARD))
+      // A stronger bot also reaches for the longer, higher-scoring words.
+      const longShare = scale(ctx.difficulty, 0.04, 0.22)
+      take(short, Math.round(target * (0.75 - longShare)))
+      take(mid, Math.round(target * 0.25))
+      take(long, Math.round(target * longShare))
 
       const span = LAST_WORD_MS - FIRST_WORD_MS
       // Delays are relative to now; the plan is relative to match start.

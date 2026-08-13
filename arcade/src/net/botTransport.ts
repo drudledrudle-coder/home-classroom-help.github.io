@@ -1,4 +1,6 @@
 import type { GameId, MatchEvent } from '../../shared/protocol'
+import { currentDifficulty } from '../lib/difficulty'
+import type { Difficulty } from '../lib/difficulty'
 import { EV_READY, readShellState } from './shellState'
 import type { Transport, TransportState } from './types'
 
@@ -11,6 +13,12 @@ export type BotApi = {
 export type BotCtx = {
   seed: number
   startedAt: number
+  /**
+   * How hard to play, 1..5. Read fresh on every reaction rather than captured
+   * when the brain is built, so changing the slider between games takes effect
+   * without rebuilding anything.
+   */
+  difficulty: Difficulty
 }
 
 /**
@@ -123,6 +131,7 @@ export function createBotTransport(pick: (id: GameId) => BotFactory | null): Tra
       brain.react(state.events.slice(shell.startIndex + 1), api, {
         seed: shell.seed,
         startedAt: shell.startedAt,
+        difficulty: currentDifficulty(),
       })
     } finally {
       stepping = false

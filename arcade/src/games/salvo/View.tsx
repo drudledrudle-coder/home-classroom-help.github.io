@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef } from 'react'
 import { OTHER } from '../../../shared/protocol'
 import { Press } from '../../components/Press'
+import { useGridKeys } from '../../lib/input'
 import { spring, springSnap, springSoft } from '../../lib/motion'
 import { useSound } from '../../lib/sound'
 import type { GameViewProps } from '../types'
@@ -43,6 +44,9 @@ export function SalvoView({ state, ctx, send }: GameViewProps<SalvoState>) {
     return () => clearTimeout(id)
   }, [state, slot, fleet, send])
 
+  const boardRef = useRef<HTMLDivElement>(null)
+  useGridKeys(boardRef, GRID, myTurn)
+
   const myShots = state.shots[slot]
   const theirShots = state.shots[theirSlot]
   const myHits = myShots.filter((s) => s.hit).length
@@ -64,6 +68,7 @@ export function SalvoView({ state, ctx, send }: GameViewProps<SalvoState>) {
 
       {/* The board you shoot at. */}
       <div
+        ref={boardRef}
         className="grid gap-1.5"
         style={{
           gridTemplateColumns: `repeat(${GRID}, minmax(0, 1fr))`,

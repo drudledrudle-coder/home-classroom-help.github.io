@@ -1,3 +1,4 @@
+import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
 import { EV_PLACE, replay, wouldWin } from './logic'
@@ -6,13 +7,14 @@ import type { ShiftState } from './logic'
 /** Ranked fallback when there is nothing to win or block. */
 const PREFERENCE = [4, 0, 2, 6, 8, 1, 3, 5, 7]
 /** How often the bot passes up the best move, so it stays beatable. */
-const SLOPPINESS = 0.16
+const SLOPPY_EASY = 0.62
+const SLOPPY_HARD = 0.02
 
-function chooseCell(state: ShiftState, rand: () => number): number {
+function chooseCell(state: ShiftState, rand: () => number, sloppiness: number): number {
   const empty = PREFERENCE.filter((cell) => state.board[cell] === null)
   if (!empty.length) return -1
 
-  if (rand() > SLOPPINESS) {
+  if (rand() > sloppiness) {
     const win = empty.find((cell) => wouldWin(state, 'guest', cell))
     if (win !== undefined) return win
 
@@ -39,7 +41,7 @@ export const shiftBot: BotFactory = () => {
       pendingFor = gameEvents.length
 
       const rand = mulberry32(ctx.seed + gameEvents.length * 31_337)
-      const cell = chooseCell(state, rand)
+      const cell = chooseCell(state, rand, scale(ctx.difficulty, SLOPPY_EASY, SLOPPY_HARD))
       if (cell < 0) return
 
       // Long enough to read as deliberation, short enough not to stall.

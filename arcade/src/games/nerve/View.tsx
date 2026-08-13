@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef } from 'react'
 import { Counter } from '../../components/Counter'
 import { Press } from '../../components/Press'
+import { useGridKeys } from '../../lib/input'
 import { spring, springSnap, springSoft } from '../../lib/motion'
 import { useSound } from '../../lib/sound'
 import type { GameViewProps } from '../types'
@@ -23,6 +24,9 @@ export function NerveView({ state, ctx, send }: GameViewProps<NerveState>) {
     bustedAt.current = state.turnIndex
     sound.play('foul')
   }, [state.busted, state.turnIndex, sound])
+
+  const boardRef = useRef<HTMLDivElement>(null)
+  useGridKeys(boardRef, 4, myTurn)
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-3 sm:px-6">
@@ -48,6 +52,7 @@ export function NerveView({ state, ctx, send }: GameViewProps<NerveState>) {
       </div>
 
       <div
+        ref={boardRef}
         className="grid grid-cols-4 gap-2"
         style={{ maxWidth: 'min(100%, calc(100dvh - 19rem))' }}
       >

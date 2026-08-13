@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { OTHER } from '../../../shared/protocol'
 import type { Slot } from '../../../shared/protocol'
 import { Press } from '../../components/Press'
+import { useKeyAction } from '../../lib/input'
 import { spring, springSnap, springSoft } from '../../lib/motion'
 import { useSound } from '../../lib/sound'
 import type { GameViewProps } from '../types'
@@ -89,6 +90,9 @@ export function ReactionView({ state, ctx, send }: GameViewProps<ReactionState>)
       sound.play('confirm')
     }
   }, [phase, over, slot, send, sound])
+
+  // The whole game is one action, so it gets one key.
+  useKeyAction(['Space', 'Enter'], onTap, !over)
 
   const last = state.history[state.history.length - 1]
   const showResult = phase === 'result' && last

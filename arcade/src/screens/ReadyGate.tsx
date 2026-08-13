@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { OTHER } from '../../shared/protocol'
 import type { Slot } from '../../shared/protocol'
 import { Button } from '../components/Button'
+import { DifficultySlider } from '../components/DifficultySlider'
 import { CheckIcon } from '../components/icons'
 import type { AnyGameModule } from '../games/types'
 import { spring, springSnap } from '../lib/motion'
@@ -64,6 +65,10 @@ export function ReadyGate({
       </motion.div>
 
       <div className="mt-9 flex flex-col gap-2.5">
+        {/* Only shown against the bot, and only before the match starts —
+            changing it mid-game would be changing the rules mid-game. */}
+        {isBot && !iAmReady ? <DifficultySlider /> : null}
+
         <div className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3">
           <span className="chrome text-muted">{isBot ? 'Bot' : 'Opponent'}</span>
           <ReadyFlag on={theyAreReady} />

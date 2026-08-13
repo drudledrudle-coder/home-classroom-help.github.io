@@ -1,3 +1,4 @@
+import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
 import { EV_BANK, EV_FLIP, TILES, bombOdds, replay } from './logic'
@@ -22,9 +23,11 @@ export const nerveBot: BotFactory = () => {
       const rand = mulberry32(ctx.seed + state.turnIndex * 7_919 + state.revealed.length)
       const risk = bombOdds(state)
       const nerve = 0.9 + rand() * 0.5
+      // A gentle bot misjudges the bet in both directions; a ruthless one
+      // plays close to the true expected value.
+      const judgement = scale(ctx.difficulty, 1.9, 3.4)
 
-      // Expected gain from one more tile against what the pot is worth.
-      const worthIt = state.pot === 0 || risk * state.pot < 3.2 * nerve
+      const worthIt = state.pot === 0 || risk * state.pot < judgement * nerve
 
       if (!worthIt) {
         api.emit(EV_BANK, undefined, 620 + Math.floor(rand() * 500))

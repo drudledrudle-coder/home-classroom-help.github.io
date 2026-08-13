@@ -140,7 +140,46 @@ After the first deploy, check that `POST /api/room` returns JSON rather than the
 SPA fallback — a misconfigured functions directory is the one thing that breaks
 silently.
 
+## Controls
+
+Every game takes both touch and keyboard. Tapping and clicking are the same event,
+so the pointer half is free; the keyboard half is not, and is wired per game.
+
+| Game | Touch | Keyboard |
+| --- | --- | --- |
+| Merge, Snake | Swipe | Arrows or WASD |
+| Roll | Drag | Arrows or A/D |
+| Tug | Tap | Space |
+| Reaction Duel, Stack | Tap | Space or Enter |
+| Four | Tap a column | 1–7, or arrows + Enter |
+| Recall | Tap a pad | 1–4 |
+| Shift, Nerve, Salvo, Odd One Out | Tap a cell | Arrows + Enter |
+| Word Sprint | Tap the letters | Type, Enter, Backspace |
+| Dot Grab, Imposter | Tap | — (spatial and physical; a keyboard adds nothing) |
+
+Grid navigation moves real DOM focus rather than tracking a cursor in React, so
+Enter and Space activate natively, the existing focus ring shows where you are, and
+screen readers follow along. Disabled cells are stepped over rather than collapsed,
+which keeps the grid's shape as cells get used up.
+
+## Bot difficulty
+
+Five stops from Gentle to Ruthless, on the ready gate whenever you play the bot,
+saved in localStorage. It disappears once you have readied up — changing it
+mid-match would be changing the rules mid-match.
+
+Each bot maps the level onto its own constants rather than sharing one knob:
+Reaction moves its reaction floor between 430ms and 165ms, Tug its tap rate between
+3.2 and 9.4 a second, Four and Shift how often they pass up the correct move, Sprint
+how many words it finds and how long they are, Grab how many dots it even attempts,
+Nerve how well it judges the bet, and Salvo how reliably it follows up a hit. The
+control is a real `<input type="range">`, so it drags, takes arrow keys and reads
+correctly to assistive technology.
+
 ## Devices
+
+Installable: there is a web manifest and a full icon set, so "add to home screen"
+gives a proper standalone app rather than a browser shortcut.
 
 Built mobile-first and checked at nine viewports — 375/390 phone portrait, phone
 landscape, iPad mini/Air/Pro portrait, iPad landscape, 1440 laptop and 1920 desktop

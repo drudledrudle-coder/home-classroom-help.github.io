@@ -1,3 +1,4 @@
+import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
 import { EV_CLAIM, scheduleFor } from './logic'
@@ -7,9 +8,12 @@ import { EV_CLAIM, scheduleFor } from './logic'
  * Tuned so an attentive player comfortably wins and a distracted one does not —
  * at full attention it was taking roughly two thirds of the board.
  */
-const ATTENTION = 0.44
-const REACTION_MIN_MS = 340
-const REACTION_VAR_MS = 440
+const ATTENTION_EASY = 0.2
+const ATTENTION_HARD = 0.72
+const REACTION_MIN_EASY = 620
+const REACTION_MIN_HARD = 240
+const REACTION_VAR_EASY = 520
+const REACTION_VAR_HARD = 300
 
 export const grabBot: BotFactory = () => {
   let planned = false
@@ -25,10 +29,14 @@ export const grabBot: BotFactory = () => {
       // start event took to arrive.
       const lag = Math.max(0, api.now() - ctx.startedAt)
 
-      for (const dot of scheduleFor(ctx.seed)) {
-        if (rand() > ATTENTION) continue
+      const attention = scale(ctx.difficulty, ATTENTION_EASY, ATTENTION_HARD)
+      const minReaction = scale(ctx.difficulty, REACTION_MIN_EASY, REACTION_MIN_HARD)
+      const varReaction = scale(ctx.difficulty, REACTION_VAR_EASY, REACTION_VAR_HARD)
 
-        const reaction = REACTION_MIN_MS + rand() * REACTION_VAR_MS
+      for (const dot of scheduleFor(ctx.seed)) {
+        if (rand() > attention) continue
+
+        const reaction = minReaction + rand() * varReaction
         // Going for a dot it cannot reach in time would just be a dead event.
         if (reaction > dot.life * 0.9) continue
 

@@ -1,3 +1,4 @@
+import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
 import { DURATION_MS, EV_PULL } from './logic'
@@ -8,7 +9,9 @@ import { DURATION_MS, EV_PULL } from './logic'
  * player's client uses, so neither side floods the log.
  */
 const FLUSH_MS = 160
-const TAPS_PER_SECOND = 6.5
+/** Taps per second, Gentle to Ruthless. A brisk human sits near 8. */
+const RATE_EASY = 3.2
+const RATE_HARD = 9.4
 
 export const tugBot: BotFactory = () => {
   let planned = false
@@ -25,7 +28,7 @@ export const tugBot: BotFactory = () => {
       for (let t = FLUSH_MS; t < DURATION_MS; t += FLUSH_MS) {
         // Rate wobbles so it does not read as a metronome, and so the rope
         // visibly gives and takes rather than sliding at a constant speed.
-        const rate = TAPS_PER_SECOND * (0.75 + rand() * 0.5)
+        const rate = scale(ctx.difficulty, RATE_EASY, RATE_HARD) * (0.75 + rand() * 0.5)
         carry += (rate * FLUSH_MS) / 1000
 
         const taps = Math.floor(carry)

@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Press } from '../../../components/Press'
+import { useGridKeys } from '../../../lib/input'
 import { springSnap, springSoft } from '../../../lib/motion'
 import { useSound } from '../../../lib/sound'
 import type { SoloApi, SoloModule } from '../types'
@@ -67,6 +68,9 @@ function OddOnePlay({ api }: { api: SoloApi }) {
     [odd, level, api, sound],
   )
 
+  const boardRef = useRef<HTMLDivElement>(null)
+  useGridKeys(boardRef, size, true)
+
   const base = 'var(--t-accent)'
   const oddColour = `color-mix(in srgb, var(--t-ink) ${delta.toFixed(2)}%, var(--t-accent))`
 
@@ -89,6 +93,7 @@ function OddOnePlay({ api }: { api: SoloApi }) {
       </div>
 
       <motion.div
+        ref={boardRef}
         key={`${level}-${size}`}
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}

@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { Slot } from '../../../shared/protocol'
 import { Press } from '../../components/Press'
+import { useGridKeys } from '../../lib/input'
 import { spring, springSnap, springSoft } from '../../lib/motion'
 import { useSound } from '../../lib/sound'
 import type { GameViewProps } from '../types'
@@ -25,6 +26,9 @@ export function ShiftView({ state, ctx, send }: GameViewProps<ShiftState>) {
     return () => clearTimeout(id)
   }, [slot, state.roundOver, state.phase, send])
 
+  const boardRef = useRef<HTMLDivElement>(null)
+  useGridKeys(boardRef, 3, myTurn)
+
   return (
     <div className="mx-auto flex w-full max-w-lg min-h-0 flex-1 flex-col items-center justify-center px-4 py-3 sm:px-6 sm:py-4">
       <TurnLine state={state} slot={slot} />
@@ -34,6 +38,7 @@ export function ShiftView({ state, ctx, send }: GameViewProps<ShiftState>) {
           and clip it. Bounding the width by the leftover viewport height keeps
           it whole in landscape. */}
       <div
+        ref={boardRef}
         className="mt-3 grid aspect-square w-full grid-cols-3 gap-2 sm:mt-4 sm:gap-2.5"
         style={{ maxWidth: 'min(100%, calc(100dvh - 11rem))' }}
       >

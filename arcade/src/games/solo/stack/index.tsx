@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Press } from '../../../components/Press'
+import { useKeyAction } from '../../../lib/input'
 import { springSnap } from '../../../lib/motion'
 import { useSound } from '../../../lib/sound'
 import type { SoloApi, SoloModule } from '../types'
@@ -89,6 +90,8 @@ function StackPlay({ api }: { api: SoloApi }) {
     // Restart the sweep from whichever wall it was heading towards.
     pos.current = dir.current > 0 ? 0 : WIDTH - overlap
   }, [api, sound])
+
+  useKeyAction(['Space', 'Enter', 'ArrowDown'], drop, true)
 
   const shown = rows.slice(-VISIBLE_ROWS)
   const top = rows[rows.length - 1]
