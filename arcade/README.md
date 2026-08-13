@@ -4,15 +4,30 @@ Four two-player mini games. One player makes a room, gets a four-letter code, th
 other joins. No accounts, no login, no install. There is a solo mode against a bot
 so the app is never a dead end.
 
+**Two players** (or against the bot):
+
 | Game | Rule | Format |
 | --- | --- | --- |
 | Reaction Duel | When the screen flips colour, tap first — tap early and you lose the round. | Best of 5 |
-| Shift | Tic-tac-toe where you only ever own three pieces; your fourth removes your oldest. | First to 2 |
+| Tug | Tap fast and drag the marker onto your side. | 10 seconds |
 | Dot Grab | Dots pop up on a shared board — tap to claim, most dots wins. | 30 seconds |
+| Nerve | Flip tiles for points; bank them before you hit the bomb that takes the lot. | First to 30 |
+| Shift | Tic-tac-toe where you only ever own three pieces; your fourth removes your oldest. | First to 2 |
 | Word Sprint | Same seven letters for both players, spell the most words. | 60 seconds |
 
-React + Vite + TypeScript, Tailwind v4, Framer Motion. ~120KB gzipped for the app,
+**On your own**, chasing a personal best:
+
+| Game | Rule | Scored on |
+| --- | --- | --- |
+| Odd One Out | One square is a slightly different shade — tap it before the timer, and the difference shrinks every level. | Levels reached |
+
+React + Vite + TypeScript, Tailwind v4, Framer Motion. ~125KB gzipped for the app,
 plus an 86KB dictionary chunk that only loads if someone picks Word Sprint.
+
+The accent colour is pickable from the swatch in the top right — six options, each
+with a hand-tuned light and dark variant, saved in localStorage. Odd One Out derives
+its two shades from whichever accent is active with `color-mix`, so it works in every
+colour and both themes without per-colour tuning.
 
 ---
 
@@ -176,10 +191,20 @@ same six methods, with no changes to any game.
 
 ---
 
-## Adding a fifth game
+## Adding a game
 
-A game is a directory of four files. Nothing outside it needs to know the game
-exists except one line in the registry.
+There are two kinds, and they share almost nothing on purpose.
+
+**A solo score game** is much the simpler of the two. It has no opponent, so there
+is nothing to synchronise: no log, no seed, no reducer. Create
+`src/games/solo/yourgame/index.tsx` exporting a `SoloModule` — a `meta` block and a
+`Play` component that receives `{ api }` and calls `api.setScore(n)` as it goes and
+`api.end()` when the run is over. Add the id to `SoloId` and a line to
+`src/games/solo/registry.ts`. The shell handles the score line, the personal best,
+the result card and "go again". `direction: 'low'` scores a time instead of points.
+
+**A two-player game** is a directory of four files. Nothing outside it needs to know
+it exists except one line in the registry.
 
 ```
 src/games/yourgame/
@@ -230,11 +255,18 @@ lines in `src/games/registry.ts`:
 
 ```ts
 export const GAMES = { /* ... */ yourgame: yourGame }
-export const GAME_ORDER: GameId[] = ['reaction', 'shift', 'grab', 'sprint', 'yourgame']
+export const GAME_ORDER: GameId[] = ['reaction', 'tug', 'grab', 'nerve', 'shift', 'yourgame']
 ```
 
 That is all. The lobby row, ready gate, score line, timer, disconnect overlay,
 result card, rematch and bot wiring are already handled.
+
+**One thing to watch: event volume.** The log is capped and every event is a
+function invocation's worth of payload, so a game driven by rapid input must batch.
+Tug is the worked example — mashing produces ~10 taps a second per player, so the
+view counts them locally and flushes a single `pull` event every 160ms instead of
+sending one event per tap. Anything continuous (dragging, holding, mashing) needs
+the same treatment.
 
 ---
 
@@ -251,10 +283,11 @@ arcade/
 ├── scripts/         word list generator
 └── src/
     ├── net/         transports, useMatch, client-side prediction, gate client
-    ├── games/       one directory per game + the registry
+    ├── games/       one directory per two-player game + the registry
+    │   └── solo/    score games, their registry and personal bests
     ├── components/  design system and the shared game shell
-    ├── screens/     gate, home, room, picker, ready gate
-    └── lib/         theme, sound, motion vocabulary, pointer detection, seeded RNG
+    ├── screens/     gate, home, room, picker, ready gate, solo shell
+    └── lib/         theme, accent, sound, motion, pointer detection, seeded RNG
 ```
 
 Fonts (Bricolage Grotesque for display, Inter for UI) are self-hosted Latin subsets

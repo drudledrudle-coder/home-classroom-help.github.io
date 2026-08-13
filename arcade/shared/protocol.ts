@@ -11,7 +11,7 @@
  * replay it) and what keeps round-trip time out of the reaction game.
  */
 
-export const GAME_IDS = ['reaction', 'shift', 'sprint', 'grab'] as const
+export const GAME_IDS = ['reaction', 'shift', 'sprint', 'grab', 'tug', 'nerve'] as const
 export type GameId = (typeof GAME_IDS)[number]
 
 export type Slot = 'host' | 'guest'

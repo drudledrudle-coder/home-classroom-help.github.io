@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { spring, springSnap } from '../lib/motion'
 import { useSound } from '../lib/sound'
 import { useTheme } from '../lib/theme'
+import { AccentPicker } from './AccentPicker'
 import { BackIcon, MoonIcon, SoundOffIcon, SoundOnIcon, SunIcon } from './icons'
 import { Press } from './Press'
 
@@ -35,8 +36,11 @@ export function TopBar({ onBack, center }: { onBack?: () => void; center?: React
 
   return (
     <header className="safe-t sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
+      {/* Left-aligned rather than a centred middle slot: with three controls on
+          the right, a centred slot leaves too little room for the room code at
+          375px. Aligning left removes the constraint entirely. */}
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-3 pb-2 sm:px-5 short:h-12 short:pb-1">
-        <div className="flex w-24 items-center sm:w-28">
+        <div className="flex shrink-0 items-center">
           <AnimatePresence initial={false}>
             {onBack ? (
               <motion.div
@@ -69,9 +73,10 @@ export function TopBar({ onBack, center }: { onBack?: () => void; center?: React
           </AnimatePresence>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center justify-center">{center}</div>
+        <div className="ml-2 flex min-w-0 items-center">{center}</div>
 
-        <div className="flex w-24 shrink-0 items-center justify-end gap-0.5 sm:w-28">
+        <div className="flex flex-1 shrink-0 items-center justify-end gap-0.5">
+          <AccentPicker />
           <IconToggle
             onClick={sound.toggle}
             label={sound.enabled ? 'Mute sound' : 'Unmute sound'}

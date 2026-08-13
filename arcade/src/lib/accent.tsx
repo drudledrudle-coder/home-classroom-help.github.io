@@ -1,0 +1,111 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import { useTheme } from './theme'
+
+/**
+ * The accent is the only colour in the app, so it is the one thing worth
+ * letting people change.
+ *
+ * Each accent ships as a *pair*, not one value: a hue that reads well on the
+ * near-black ground is usually too light to sit on warm paper, and the text
+ * colour that belongs on top flips with it. Picking these by hand beats
+ * deriving them — lime needs black text, azure needs white.
+ */
+
+export type AccentId = 'vermillion' | 'amber' | 'lime' | 'teal' | 'azure' | 'magenta'
+
+type Variant = { c: string; ink: string }
+
+export const ACCENTS: Record<AccentId, { label: string; dark: Variant; light: Variant }> = {
+  vermillion: {
+    label: 'Vermillion',
+    dark: { c: '#ff4a2b', ink: '#0b0b0c' },
+    light: { c: '#de3009', ink: '#ffffff' },
+  },
+  amber: {
+    label: 'Amber',
+    dark: { c: '#ffb020', ink: '#0b0b0c' },
+    light: { c: '#a35c00', ink: '#ffffff' },
+  },
+  lime: {
+    label: 'Lime',
+    dark: { c: '#c9f231', ink: '#0b0b0c' },
+    light: { c: '#5c7300', ink: '#ffffff' },
+  },
+  teal: {
+    label: 'Teal',
+    dark: { c: '#2dd4bf', ink: '#0b0b0c' },
+    light: { c: '#0c7a6c', ink: '#ffffff' },
+  },
+  azure: {
+    label: 'Azure',
+    dark: { c: '#5c9bff', ink: '#0b0b0c' },
+    light: { c: '#1155d6', ink: '#ffffff' },
+  },
+  magenta: {
+    label: 'Magenta',
+    dark: { c: '#ff5fa8', ink: '#0b0b0c' },
+    light: { c: '#c1006a', ink: '#ffffff' },
+  },
+}
+
+export const ACCENT_IDS = Object.keys(ACCENTS) as AccentId[]
+export const DEFAULT_ACCENT: AccentId = 'vermillion'
+export const ACCENT_STORAGE_KEY = 'arcade.accent'
+
+export function isAccentId(value: unknown): value is AccentId {
+  return typeof value === 'string' && value in ACCENTS
+}
+
+/** Writes the pair for the active theme onto <html>, overriding the stylesheet. */
+export function applyAccent(id: AccentId, theme: 'light' | 'dark'): void {
+  const variant = ACCENTS[id][theme]
+  const root = document.documentElement
+  root.style.setProperty('--t-accent', variant.c)
+  root.style.setProperty('--t-accent-ink', variant.ink)
+}
+
+type AccentApi = {
+  accent: AccentId
+  setAccent: (id: AccentId) => void
+}
+
+const Ctx = createContext<AccentApi | null>(null)
+
+export function AccentProvider({ children }: { children: ReactNode }) {
+  const { theme } = useTheme()
+
+  const [accent, setAccentState] = useState<AccentId>(() => {
+    try {
+      const stored = localStorage.getItem(ACCENT_STORAGE_KEY)
+      return isAccentId(stored) ? stored : DEFAULT_ACCENT
+    } catch {
+      return DEFAULT_ACCENT
+    }
+  })
+
+  // Re-applies on theme change too, since each accent has a per-theme variant.
+  useEffect(() => {
+    applyAccent(accent, theme)
+  }, [accent, theme])
+
+  const setAccent = useCallback((id: AccentId) => {
+    setAccentState(id)
+    try {
+      // localStorage, not session: a colour choice is a preference people
+      // expect to still be there tomorrow, unlike the light/dark toggle.
+      localStorage.setItem(ACCENT_STORAGE_KEY, id)
+    } catch {
+      /* storage disabled; the choice still holds for this page */
+    }
+  }, [])
+
+  const value = useMemo(() => ({ accent, setAccent }), [accent, setAccent])
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+}
+
+export function useAccent(): AccentApi {
+  const ctx = useContext(Ctx)
+  if (!ctx) throw new Error('useAccent must be used inside AccentProvider')
+  return ctx
+}

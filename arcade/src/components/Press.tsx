@@ -6,7 +6,8 @@ import { useSound } from '../lib/sound'
 import type { Cue } from '../lib/sound'
 
 type PressProps = Omit<ComponentPropsWithoutRef<typeof motion.button>, 'children'> & {
-  children: ReactNode
+  /** Optional: some pressables are pure colour, like the Odd One Out tiles. */
+  children?: ReactNode
   /** Sound cue on press. Pass null for silent controls. */
   cue?: Cue | null
   /** How far the surface sinks. Large targets want less. */

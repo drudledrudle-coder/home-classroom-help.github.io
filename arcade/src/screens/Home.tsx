@@ -8,6 +8,9 @@ import { Magnetic } from '../components/Magnetic'
 import { Press } from '../components/Press'
 import { TopBar } from '../components/TopBar'
 import { GAMES, GAME_ORDER } from '../games/registry'
+import { readBest } from '../games/solo/bests'
+import { SOLO_GAMES, SOLO_ORDER } from '../games/solo/registry'
+import type { SoloId } from '../games/solo/types'
 import { spring, springSnap, stagger } from '../lib/motion'
 import { usePointerFine } from '../lib/pointer'
 
@@ -15,11 +18,13 @@ export function Home({
   onCreate,
   onJoin,
   onSolo,
+  onSoloScore,
   initialCode = '',
 }: {
   onCreate: () => void
   onJoin: (code: string) => void
   onSolo: (game?: GameId) => void
+  onSoloScore: (game: SoloId) => void
   initialCode?: string
 }) {
   const [code, setCode] = useState(initialCode)
@@ -69,8 +74,13 @@ export function Home({
         </section>
 
         <section className="lg:pt-0">
-          <SectionLabel>Alone</SectionLabel>
+          <SectionLabel>Two players, or against the bot</SectionLabel>
           <GameIndex onPick={onSolo} />
+
+          <div className="mt-10">
+            <SectionLabel>On your own</SectionLabel>
+            <SoloIndex onPick={onSoloScore} />
+          </div>
         </section>
       </main>
     </div>
@@ -79,6 +89,42 @@ export function Home({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <span className="chrome text-muted/70">{children}</span>
+}
+
+/** Solo score games, with the number to beat shown inline. */
+function SoloIndex({ onPick }: { onPick: (id: SoloId) => void }) {
+  return (
+    <ul className="mt-2 border-t border-line">
+      {SOLO_ORDER.map((id, i) => {
+        const { meta } = SOLO_GAMES[id]
+        const best = readBest(id)
+        return (
+          <motion.li
+            key={id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={stagger(i + GAME_ORDER.length, 0.06)}
+            className="border-b border-line"
+          >
+            <Press
+              cue="tap"
+              depth={0.99}
+              onClick={() => onPick(id)}
+              aria-label={`Play ${meta.title}`}
+              className="flex w-full items-baseline gap-4 py-5 text-left sm:gap-6"
+            >
+              <span className="display min-w-0 flex-1 text-[1.5rem] leading-none sm:text-[1.875rem]">
+                {meta.title}
+              </span>
+              <span className="chrome shrink-0 text-muted/60">
+                {best === null ? 'No score yet' : `Best ${best}`}
+              </span>
+            </Press>
+          </motion.li>
+        )
+      })}
+    </ul>
+  )
 }
 
 /**

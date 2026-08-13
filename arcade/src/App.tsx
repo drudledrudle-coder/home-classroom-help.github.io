@@ -3,6 +3,7 @@ import type { GameId } from '../shared/protocol'
 import { normalizeCode } from '../shared/protocol'
 import { CursorField } from './components/CursorField'
 import { botFor } from './games/registry'
+import type { SoloId } from './games/solo/types'
 import { createBotTransport } from './net/botTransport'
 import { gateRequired, gateToken } from './net/gate'
 import { createOnlineTransport } from './net/onlineTransport'
@@ -10,8 +11,12 @@ import type { Transport } from './net/types'
 import { Gate } from './screens/Gate'
 import { Home } from './screens/Home'
 import { Room } from './screens/Room'
+import { SoloPlay } from './screens/SoloPlay'
 
-type Route = { name: 'home' } | { name: 'room'; transport: Transport; autoSelect?: GameId }
+type Route =
+  | { name: 'home' }
+  | { name: 'room'; transport: Transport; autoSelect?: GameId }
+  | { name: 'solo'; game: SoloId }
 type GateState = 'checking' | 'locked' | 'open'
 
 /** A shared link looks like https://host/#WXYZ. */
@@ -72,6 +77,16 @@ export function App() {
 
   const playSolo = useCallback((game?: GameId) => enter(createBotTransport(botFor), game), [enter])
 
+  // Score games have no room, so they skip the transport entirely.
+  const playSoloScore = useCallback(
+    (game: SoloId) => {
+      active.current?.stop()
+      active.current = null
+      setRoute({ name: 'solo', game })
+    },
+    [],
+  )
+
   // Landing on a shared link goes straight into the room, but never before the
   // key has been cleared.
   const autoJoined = useRef(false)
@@ -112,8 +127,11 @@ export function App() {
             onCreate={createRoom}
             onJoin={joinRoom}
             onSolo={playSolo}
+            onSoloScore={playSoloScore}
             initialCode={initialCode}
           />
+        ) : route.name === 'solo' ? (
+          <SoloPlay id={route.game} onExit={goHome} />
         ) : (
           <Room
             transport={route.transport}
