@@ -1,14 +1,15 @@
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useState } from 'react'
 import type { GameId } from '../../shared/protocol'
 import { CODE_LENGTH } from '../../shared/protocol'
 import { Button } from '../components/Button'
 import { CodeInput } from '../components/CodeInput'
-import { BotIcon, LinkIcon } from '../components/icons'
+import { Magnetic } from '../components/Magnetic'
 import { Press } from '../components/Press'
 import { TopBar } from '../components/TopBar'
 import { GAMES, GAME_ORDER } from '../games/registry'
-import { fadeUp, spring, stagger } from '../lib/motion'
+import { spring, springSnap, stagger } from '../lib/motion'
+import { usePointerFine } from '../lib/pointer'
 
 export function Home({
   onCreate,
@@ -31,87 +32,140 @@ export function Home({
   )
 
   return (
-    <div className="flex min-h-[100dvh] flex-col">
+    <div className="relative flex min-h-[100dvh] flex-col">
       <TopBar />
 
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-5 pb-10 sm:px-6">
-        <motion.div {...fadeUp} className="pt-10 pb-8 sm:pt-16 sm:pb-12">
-          <h1 className="display text-[3.25rem] leading-[0.88] sm:text-[4.5rem]">
-            Two players.
-            <br />
-            <span className="text-muted">Two minutes.</span>
-          </h1>
-          <p className="mt-5 max-w-sm text-[0.9375rem] leading-relaxed text-muted">
-            Four small games. Make a room, send the code, play. No accounts, nothing to install.
-          </p>
-        </motion.div>
+      {/* `content-start` matters: without it the grid stretches its rows to fill
+          the flex-1 main, which opens a dead gap between the two sections on
+          any single-column screen tall enough to have slack (iPad portrait). */}
+      <main className="relative z-10 mx-auto grid w-full max-w-5xl flex-1 grid-cols-1 content-start gap-11 px-5 pt-10 pb-14 sm:px-8 sm:pt-14 md:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] md:content-center md:gap-12 md:pb-20 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:gap-20">
+        <section>
+          <SectionLabel>Two players</SectionLabel>
 
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...spring, delay: 0.06 }}
-          className="flex flex-col gap-2.5"
-        >
-          <Button size="lg" full onClick={onCreate}>
-            <LinkIcon size={17} />
-            Create a room
-          </Button>
-          <Button size="lg" full variant="secondary" onClick={() => onSolo()}>
-            <BotIcon size={17} />
-            Play the bot
-          </Button>
-        </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={spring}
+            className="mt-4"
+          >
+            <Magnetic strength={0.16}>
+              <Button size="lg" full onClick={onCreate}>
+                Create a room
+              </Button>
+            </Magnetic>
+          </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.16 }}
-          className="pt-9 pb-8"
-        >
-          <div className="flex items-center gap-4 pb-5">
-            <span className="h-px flex-1 bg-line" />
-            <span className="chrome text-muted">or join a room</span>
-            <span className="h-px flex-1 bg-line" />
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...spring, delay: 0.06 }}
+            className="mt-7"
+          >
+            <SectionLabel>Have a code</SectionLabel>
+            <div className="mt-3.5">
+              <CodeInput value={code} onChange={setCode} onComplete={join} />
+            </div>
+          </motion.div>
+        </section>
 
-          <CodeInput value={code} onChange={setCode} onComplete={join} />
-        </motion.div>
-
-        <div className="mt-auto">
-          <span className="chrome text-muted">The games</span>
-          <ul className="mt-3 flex flex-col">
-            {GAME_ORDER.map((id, i) => {
-              const { meta } = GAMES[id]
-              return (
-                <motion.li
-                  key={id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={stagger(i + 3)}
-                >
-                  <Press
-                    cue="tap"
-                    depth={0.985}
-                    onClick={() => onSolo(id)}
-                    aria-label={`Play ${meta.title} against the bot`}
-                    className="flex w-full items-baseline gap-3 border-b border-line py-3.5 text-left"
-                  >
-                    <span className="display w-full max-w-[8.5rem] shrink-0 text-[1.0625rem]">
-                      {meta.title}
-                    </span>
-                    <span className="flex-1 text-[0.8125rem] leading-snug text-muted">
-                      {meta.rule}
-                    </span>
-                  </Press>
-                </motion.li>
-              )
-            })}
-          </ul>
-          <p className="pt-3 text-[0.75rem] text-muted/70">
-            Tap any game to play it against the bot right now.
-          </p>
-        </div>
+        <section className="lg:pt-0">
+          <SectionLabel>Alone</SectionLabel>
+          <GameIndex onPick={onSolo} />
+        </section>
       </main>
     </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <span className="chrome text-muted/70">{children}</span>
+}
+
+/**
+ * The games as a numbered index rather than a grid of cards. An accent rule
+ * slides between rows under the cursor — one shared `layoutId`, so it is a
+ * single element travelling rather than four fading in and out.
+ */
+function GameIndex({ onPick }: { onPick: (id: GameId) => void }) {
+  const [active, setActive] = useState<number | null>(null)
+  const fine = usePointerFine()
+
+  return (
+    <ul className="mt-2 border-t border-line">
+      {GAME_ORDER.map((id, i) => {
+        const { meta } = GAMES[id]
+        const lit = active === i
+
+        return (
+          <motion.li
+            key={id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={stagger(i, 0.06)}
+            className="relative border-b border-line"
+            onPointerEnter={() => fine && setActive(i)}
+            onPointerLeave={() => fine && setActive(null)}
+          >
+            {lit ? (
+              <motion.span
+                layoutId="index-rule"
+                transition={spring}
+                className="absolute inset-y-0 -left-3 w-[2px] bg-accent sm:-left-4"
+              />
+            ) : null}
+
+            <Press
+              cue="tap"
+              depth={0.99}
+              onClick={() => onPick(id)}
+              onFocus={() => setActive(i)}
+              onBlur={() => setActive(null)}
+              aria-label={`Play ${meta.title} against the bot`}
+              className="flex w-full items-baseline gap-4 py-5 text-left sm:gap-6 sm:py-6"
+            >
+              <span className="chrome tnum w-5 shrink-0 text-muted/50">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+
+              <motion.span
+                animate={{ x: lit ? 5 : 0 }}
+                transition={spring}
+                className="display min-w-0 flex-1 text-[1.5rem] leading-none sm:text-[1.875rem]"
+              >
+                {meta.title}
+              </motion.span>
+
+              <span className="relative flex shrink-0 items-center justify-end">
+                <AnimatePresence mode="wait" initial={false}>
+                  {lit ? (
+                    <motion.span
+                      key="go"
+                      initial={{ opacity: 0, x: -6 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 6 }}
+                      transition={springSnap}
+                      className="chrome text-accent"
+                    >
+                      Play
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="format"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={springSnap}
+                      className="chrome text-muted/60"
+                    >
+                      {meta.format}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </span>
+            </Press>
+          </motion.li>
+        )
+      })}
+    </ul>
   )
 }

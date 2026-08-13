@@ -4,6 +4,10 @@
    manual toggle can override the OS preference. */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
+/* A phone held sideways. Not a width problem — there is plenty of width — so the
+   normal breakpoints are the wrong tool. Everything vertical gets compressed. */
+@custom-variant short (@media (max-height: 560px));
+
 @font-face {
   font-family: 'Bricolage Grotesque Variable';
   font-style: normal;

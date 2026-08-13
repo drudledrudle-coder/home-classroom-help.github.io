@@ -8,6 +8,7 @@ import type {
   Slot,
 } from '../../shared/protocol'
 import { MAX_PUSH_EVENTS } from '../../shared/protocol'
+import { clearGateToken, gateHeaders } from './gate'
 import { draftId, playerId } from './identity'
 import type { Tempo, Transport, TransportState } from './types'
 import { TEMPO_MS } from './types'
@@ -23,7 +24,7 @@ async function call(req: RoomReq): Promise<RoomRes> {
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...gateHeaders() },
       body: JSON.stringify(req),
       signal: controller.signal,
     })
@@ -57,6 +58,9 @@ export function createOnlineTransport(init: OnlineInit): Transport {
   let tempo: Tempo = 'lobby'
   let timer: ReturnType<typeof setTimeout> | null = null
   let running = false
+  let stopped = false
+  /** Set once the server has actually seated us. */
+  let joined = false
   let inFlight = false
   /** A push arrived while a sync was in flight; go again immediately after. */
   let dirty = false
@@ -102,6 +106,7 @@ export function createOnlineTransport(init: OnlineInit): Transport {
         : state.events
     outbox = outbox.filter((d) => !res.accepted.includes(d.id))
     consecutiveFailures = 0
+    joined = true
 
     state = {
       ...state,
@@ -133,6 +138,7 @@ export function createOnlineTransport(init: OnlineInit): Transport {
     const res = await call(req)
     if (!res.ok) {
       // ROOM_FULL / NO_ROOM are user-facing dead ends; surface them as-is.
+      if (res.error === 'LOCKED') clearGateToken()
       fatal(res.error)
       return false
     }
@@ -175,6 +181,9 @@ export function createOnlineTransport(init: OnlineInit): Transport {
         // Write contention. Harmless; the next tick re-reads.
         patch({ conn: { phase: 'live' } })
       } else {
+        // The token expired, or the site key was changed under us. Drop it so
+        // the app falls back to the key screen instead of retrying forever.
+        if (res.error === 'LOCKED') clearGateToken()
         fatal(res.error)
       }
     } catch {
@@ -243,23 +252,27 @@ export function createOnlineTransport(init: OnlineInit): Transport {
     },
 
     stop() {
+      // Idempotent: a second stop must not fire a second `leave`, which could
+      // land after a later join and evict that session.
+      if (stopped) return
+      stopped = true
       running = false
       if (timer) clearTimeout(timer)
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisibility)
       }
-      // Free the seat immediately so the opponent sees the drop without
-      // waiting out the presence timeout. sendBeacon first, because a plain
-      // fetch is routinely killed when this runs during page teardown.
-      if (state.code) {
-        const body = JSON.stringify({ op: 'leave', code: state.code, playerId: me })
-        const sent =
-          typeof navigator !== 'undefined' &&
-          typeof navigator.sendBeacon === 'function' &&
-          navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'application/json' }))
-        if (!sent) {
-          void call({ op: 'leave', code: state.code, playerId: me }).catch(() => {})
-        }
+      // Only release a seat we actually hold. A join-mode transport knows its
+      // code before it has joined anything, so without this check a transport
+      // that is stopped before handshaking would send `leave` for a room it
+      // never entered — and because the player id is stable across reloads,
+      // that evicts whichever session *is* legitimately sitting there.
+      if (joined && state.code) {
+        void fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...gateHeaders() },
+          body: JSON.stringify({ op: 'leave', code: state.code, playerId: me }),
+          keepalive: true,
+        }).catch(() => {})
       }
       listeners.clear()
     },

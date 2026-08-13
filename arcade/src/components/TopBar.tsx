@@ -22,7 +22,7 @@ function IconToggle({
       aria-label={label}
       title={label}
       depth={0.88}
-      className="grid h-10 w-10 place-items-center rounded-lg text-muted"
+      className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-muted"
     >
       {children}
     </Press>
@@ -35,8 +35,8 @@ export function TopBar({ onBack, center }: { onBack?: () => void; center?: React
 
   return (
     <header className="safe-t sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-3 pb-2 sm:px-5">
-        <div className="flex w-20 items-center sm:w-28">
+      <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-3 pb-2 sm:px-5 short:h-12 short:pb-1">
+        <div className="flex w-24 items-center sm:w-28">
           <AnimatePresence initial={false}>
             {onBack ? (
               <motion.div
@@ -49,7 +49,7 @@ export function TopBar({ onBack, center }: { onBack?: () => void; center?: React
                   onClick={onBack}
                   aria-label="Back"
                   depth={0.88}
-                  className="-ml-1 flex h-10 items-center gap-1 rounded-lg pr-2 pl-1 text-muted"
+                  className="-ml-1 flex h-11 min-w-11 items-center gap-1 rounded-lg pr-2.5 pl-2 text-muted"
                 >
                   <BackIcon />
                   <span className="chrome hidden sm:inline">Back</span>
@@ -71,7 +71,7 @@ export function TopBar({ onBack, center }: { onBack?: () => void; center?: React
 
         <div className="flex min-w-0 flex-1 items-center justify-center">{center}</div>
 
-        <div className="flex w-20 items-center justify-end gap-0.5 sm:w-28">
+        <div className="flex w-24 shrink-0 items-center justify-end gap-0.5 sm:w-28">
           <IconToggle
             onClick={sound.toggle}
             label={sound.enabled ? 'Mute sound' : 'Unmute sound'}

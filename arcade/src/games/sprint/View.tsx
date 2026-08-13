@@ -122,7 +122,7 @@ export function SprintView({ state, ctx, send }: GameViewProps<SprintState>) {
       <motion.div
         animate={reject ? { x: [0, -7, 6, -4, 0] } : { x: 0 }}
         transition={{ duration: 0.32 }}
-        className="flex h-16 flex-col items-center justify-center"
+        className="flex h-16 flex-col items-center justify-center short:h-10"
       >
         <AnimatePresence mode="wait" initial={false}>
           {reject ? (
@@ -142,7 +142,7 @@ export function SprintView({ state, ctx, send }: GameViewProps<SprintState>) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="display text-[2.25rem] tracking-[0.02em] uppercase"
+              className="display text-[2.25rem] tracking-[0.02em] uppercase short:text-[1.5rem]"
             >
               {word || <span className="text-muted/30">—</span>}
             </motion.span>

@@ -6,10 +6,16 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# Room API is a single function; /api/room is the only server surface the app has.
+# The app's two server endpoints. Both must come before the SPA fallback.
 [[redirects]]
   from = "/api/room"
   to = "/.netlify/functions/room"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/gate"
+  to = "/.netlify/functions/gate"
   status = 200
   force = true
 

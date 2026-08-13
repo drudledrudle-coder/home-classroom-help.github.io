@@ -26,10 +26,17 @@ export function ShiftView({ state, ctx, send }: GameViewProps<ShiftState>) {
   }, [slot, state.roundOver, state.phase, send])
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-4 py-4 sm:px-6">
+    <div className="mx-auto flex w-full max-w-lg min-h-0 flex-1 flex-col items-center justify-center px-4 py-3 sm:px-6 sm:py-4">
       <TurnLine state={state} slot={slot} />
 
-      <div className="mt-4 grid aspect-square w-full grid-cols-3 gap-2 sm:gap-2.5">
+      {/* The board is square, so on a short screen its height is what runs out
+          first — width alone would render it 512px tall inside 230px of space
+          and clip it. Bounding the width by the leftover viewport height keeps
+          it whole in landscape. */}
+      <div
+        className="mt-3 grid aspect-square w-full grid-cols-3 gap-2 sm:mt-4 sm:gap-2.5"
+        style={{ maxWidth: 'min(100%, calc(100dvh - 11rem))' }}
+      >
         {state.board.map((owner, cell) => {
           const playable = myTurn && owner === null
           const inLine = state.line?.includes(cell) ?? false
@@ -86,7 +93,7 @@ export function ShiftView({ state, ctx, send }: GameViewProps<ShiftState>) {
         })}
       </div>
 
-      <p className="mt-4 text-center text-[0.8125rem] text-muted">
+      <p className="mt-4 text-center text-[0.8125rem] text-muted short:hidden">
         Three pieces each — your fourth pushes out your oldest.
       </p>
     </div>

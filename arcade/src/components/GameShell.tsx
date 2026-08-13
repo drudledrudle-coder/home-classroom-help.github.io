@@ -51,7 +51,7 @@ export function GameShell({
     <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Score line. Deliberately small and tracked-out so the board reads as
           the loud element on the screen. */}
-      <div className="mx-auto w-full max-w-3xl px-4 pt-3 sm:px-6">
+      <div className="mx-auto w-full max-w-3xl px-4 pt-3 sm:px-6 short:pt-1">
         <div className="flex items-end justify-between gap-4">
           <ScoreCell label="You" value={mine} leading={mine > theirs} align="left" />
 
@@ -110,7 +110,7 @@ function ScoreCell({
       <motion.span
         animate={{ color: leading ? 'var(--t-accent)' : 'var(--t-ink)' }}
         transition={spring}
-        className="display text-[2.25rem] leading-none sm:text-[2.75rem]"
+        className="display text-[2.25rem] leading-none sm:text-[2.75rem] short:text-[1.5rem]"
       >
         <Counter value={value} />
       </motion.span>

@@ -30,6 +30,8 @@ const ERRORS: Record<RoomErrorCode, { title: string; body: string }> = {
   BAD_REQUEST: { title: 'Something went wrong', body: 'The room rejected that request.' },
   TOO_BIG: { title: 'Something went wrong', body: 'That was too much data to send.' },
   SERVER: { title: 'Server trouble', body: 'The room service is not answering right now.' },
+  // Never rendered: App sends the player back to the key screen instead.
+  LOCKED: { title: 'Key needed', body: 'Your access has expired.' },
 }
 
 export function Room({
@@ -37,13 +39,22 @@ export function Room({
   autoSelect,
   onExit,
   onSolo,
+  onLocked,
 }: {
   transport: Transport
   autoSelect?: GameId
   onExit: () => void
   onSolo: () => void
+  onLocked: () => void
 }) {
   const match = useMatch(transport, GAMES)
+
+  // An expired token or a changed site key is not a room error to read — it is
+  // a locked door, so hand it back to the app to re-gate.
+  const locked = match.conn.phase === 'error' && match.conn.code === 'LOCKED'
+  useEffect(() => {
+    if (locked) onLocked()
+  }, [locked, onLocked])
 
   // start() is idempotent, so a StrictMode double-invoke is harmless. The
   // transport is torn down by whoever created it, not here.

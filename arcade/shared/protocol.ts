@@ -87,6 +87,8 @@ export type RoomErrorCode =
   | 'TOO_BIG'
   | 'CONFLICT'
   | 'SERVER'
+  /** Site key is set and this request did not carry a valid unlock token. */
+  | 'LOCKED'
 
 export type RoomErrorRes = { ok: false; error: RoomErrorCode; message?: string }
 

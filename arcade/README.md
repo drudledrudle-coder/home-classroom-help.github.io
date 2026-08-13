@@ -11,8 +11,51 @@ so the app is never a dead end.
 | Dot Grab | Dots pop up on a shared board — tap to claim, most dots wins. | 30 seconds |
 | Word Sprint | Same seven letters for both players, spell the most words. | 60 seconds |
 
-React + Vite + TypeScript, Tailwind v4, Framer Motion. ~118KB gzipped for the app,
+React + Vite + TypeScript, Tailwind v4, Framer Motion. ~120KB gzipped for the app,
 plus an 86KB dictionary chunk that only loads if someone picks Word Sprint.
+
+---
+
+## The access key
+
+The site is private. Visitors get a key screen before they can reach anything.
+
+> **The key itself is deliberately not written down here — this repository is
+> public.** To read the current value: Netlify → **two-minute-arcade** → Site
+> configuration → Environment variables → `ARCADE_KEY`. It is stored unhidden so
+> you can always look it up. Never paste it into a file in this repo.
+
+The key lives in the `ARCADE_KEY` environment variable on Netlify and is only ever
+compared inside a serverless function. It is never sent to the browser and never
+appears in the built JavaScript, so it cannot be read out of page source. It also
+guards the room API itself, not just the entry screen — otherwise it would be
+decoration, since rooms could still be driven directly.
+
+### Changing it
+
+1. Netlify → **two-minute-arcade** → Site configuration → Environment variables
+2. Edit `ARCADE_KEY`, save
+3. Deploys → **Trigger deploy** → Deploy site
+
+Step 3 is required: functions read environment variables from the deploy they
+shipped with, so a new value does nothing until the site redeploys. Takes about a
+minute.
+
+Two things worth knowing:
+
+- **Changing the key signs everyone out.** Unlock tokens are signed with the key
+  itself, so old ones stop verifying the moment it changes. That is the behaviour
+  you want from a shared password, but it does mean anyone mid-game gets bounced.
+- **Deleting `ARCADE_KEY` makes the site public.** The gate disables itself when
+  the variable is unset, so a missing value degrades to "open" rather than locking
+  you out of your own site. Delete it deliberately, not by accident.
+
+A wrong guess costs the guesser about half a second, which makes brute-forcing a
+multi-word key impractical, but this is a door on a party game — not a vault. Pick
+something longer than a word or two, and keep it out of this repository, which is
+public.
+
+To exercise the key screen locally: `ARCADE_KEY=whatever npm run dev`.
 
 ---
 
@@ -34,50 +77,58 @@ npm run typecheck    # tsc only
 npm run gen:words    # regenerate the Word Sprint dictionary (rarely needed)
 ```
 
-`npm run dev` and `npm run preview` both mount a local stand-in for the room API at
-`/api/room`, backed by an in-memory Map. It runs the *same* handler the deployed
-function runs, so multiplayer is fully testable locally without the Netlify CLI.
+`npm run dev` and `npm run preview` both mount a local stand-in for the server at
+`/api/room` and `/api/gate`, backed by an in-memory Map. It runs the *same* handler
+the deployed functions run, so multiplayer and the key are fully testable locally
+without the Netlify CLI.
 
 ## Environment variables
 
-**None.** There is nothing to configure and no third-party account to create.
+| Variable | Required | What it does |
+| --- | --- | --- |
+| `ARCADE_KEY` | No | The site access key. Unset means no key screen. See above. |
 
-Multiplayer runs on Netlify Blobs, which is provisioned automatically for the site
-and authenticates itself from inside the function — so there are no keys, no
-dashboard setup, and no SQL to run. If you were expecting Supabase credentials,
-that is what replaced them; see "How multiplayer works" below.
+That is the entire list. Multiplayer runs on Netlify Blobs, which is provisioned
+automatically and authenticates itself from inside the function — no keys, no
+dashboard setup, no SQL.
 
 ## Deploy
 
-> **This was not deployed from the session that built it.** Every Netlify host
-> (`api.netlify.com`, `app.netlify.com`, and the upload endpoint) is blocked by
-> that environment's outbound network policy, so the upload could not leave the
-> container. An empty site was created via the API and is waiting for a deploy:
-> **`two-minute-arcade`** — https://app.netlify.com/projects/two-minute-arcade
+The site is **two-minute-arcade** → https://app.netlify.com/projects/two-minute-arcade
 
-Either option below finishes it.
-
-**Option A — connect the repo (recommended, gives you deploy-on-push).**
-In the Netlify UI for `two-minute-arcade`: *Site configuration → Build & deploy →
-Link repository*, pick this repo, and set:
+It is wired for deploy-on-push. In the Netlify UI: Site configuration → Build &
+deploy → Link repository, pick this repo, and confirm:
 
 - Base directory: `arcade`
 - Build command: `npm run build`
 - Publish directory: `arcade/dist`
 - Functions directory: `arcade/netlify/functions`
 
-`arcade/netlify.toml` already declares all of these, so the defaults it offers
-should be correct.
+`arcade/netlify.toml` already declares all of these, so the values Netlify offers
+should already be right. After linking, every push deploys itself.
 
-**Option B — one command from your machine.**
+After the first deploy, check that `POST /api/room` returns JSON rather than the
+SPA fallback — a misconfigured functions directory is the one thing that breaks
+silently.
 
-```bash
-cd arcade
-npx netlify-cli deploy --prod --site two-minute-arcade
-```
+## Devices
 
-Either way, verify afterwards that `POST /api/room` returns JSON rather than the
-SPA fallback — that is the one thing a misconfigured functions directory breaks.
+Built mobile-first and checked at nine viewports — 375/390 phone portrait, phone
+landscape, iPad mini/Air/Pro portrait, iPad landscape, 1440 laptop and 1920 desktop
+— in both themes, with no horizontal overflow, no clipped playfield and no touch
+target under 44px.
+
+Two cases needed real work rather than a breakpoint. Shift's board is square, so on
+a phone in landscape its *height* runs out first — bounding it only by width would
+render it 512px tall inside 230px of space and clip it, so its width is also capped
+against the leftover viewport height. And a `short` variant (`max-height: 560px`)
+compresses the chrome when a phone is held sideways, since that is a height problem
+and normal breakpoints only see width.
+
+Cursor-driven motion — the trailing light, the magnetic buttons, the rule that
+slides between index rows — is gated behind `(pointer: fine)` and switched off
+entirely for `prefers-reduced-motion`. Nothing needed to play is ever behind a
+hover.
 
 ## How multiplayer works
 
@@ -100,19 +151,26 @@ That single decision handles most of the hard cases for free:
   never part of the comparison, so a slow connection is not penalised and a fast one
   gains nothing.
 
+Two subtleties that are easy to get wrong, both marked in the code:
+
+- A transport only sends `leave` if it actually joined. A join-mode transport knows
+  its room code before it has joined anything, and since the player id is stable
+  across reloads, a premature `leave` evicts whichever session legitimately holds
+  that seat.
+- There is no `pagehide` teardown, for the same reason: releasing the seat on unload
+  races the reloaded page's rejoin. Presence expiry covers a real tab close.
+
 Transport is `POST /api/room` polling, adaptive: 220ms during a live match, 900ms in
-the lobby, paused entirely when the tab is hidden. Push and poll share one round
-trip. Optimistic local events are applied instantly and reconciled when the log
-confirms them.
+the lobby, paused when the tab is hidden. Push and poll share one round trip.
+Optimistic local events are applied instantly and reconciled when the log confirms
+them.
 
 **A note on the free tier.** Two players in an active match cost roughly 9
 invocations per second between them, so a 2-minute game is about 1,100 of Netlify's
 125k free monthly invocations — call it 100 games a month. If you outgrow that, the
 cheapest fix is raising `TEMPO_MS.active` in `src/net/types.ts`; the honest fix is
-swapping in a websocket transport (see below).
-
-Swapping the transport is contained: `src/net/types.ts` defines the `Transport`
-interface, and `onlineTransport.ts` and `botTransport.ts` are the two
+swapping in a websocket transport. That swap is contained: `src/net/types.ts` defines
+the `Transport` interface, and `onlineTransport.ts` and `botTransport.ts` are the two
 implementations. A Supabase Realtime version would be a third file implementing the
 same six methods, with no changes to any game.
 
@@ -175,7 +233,7 @@ export const GAMES = { /* ... */ yourgame: yourGame }
 export const GAME_ORDER: GameId[] = ['reaction', 'shift', 'grab', 'sprint', 'yourgame']
 ```
 
-That is all. The lobby card, ready gate, score line, timer, disconnect overlay,
+That is all. The lobby row, ready gate, score line, timer, disconnect overlay,
 result card, rematch and bot wiring are already handled.
 
 ---
@@ -184,16 +242,19 @@ result card, rematch and bot wiring are already handled.
 
 ```
 arcade/
-├── shared/          protocol + room handler (browser, function and dev server all import this)
-├── netlify/functions/room.ts    the only server endpoint, backed by Netlify Blobs
-├── dev/             local stand-in for that endpoint
+├── shared/          protocol + room handler (browser, functions and dev server all import this)
+├── server/          site-key signing and verification (functions only)
+├── netlify/functions/
+│   ├── room.ts      the room sequencer, backed by Netlify Blobs
+│   └── gate.ts      the key check
+├── dev/             local stand-in for both endpoints
 ├── scripts/         word list generator
 └── src/
-    ├── net/         transports, useMatch, client-side prediction
+    ├── net/         transports, useMatch, client-side prediction, gate client
     ├── games/       one directory per game + the registry
     ├── components/  design system and the shared game shell
-    ├── screens/     home, room, picker, ready gate
-    └── lib/         theme, sound, motion vocabulary, seeded RNG
+    ├── screens/     gate, home, room, picker, ready gate
+    └── lib/         theme, sound, motion vocabulary, pointer detection, seeded RNG
 ```
 
 Fonts (Bricolage Grotesque for display, Inter for UI) are self-hosted Latin subsets
