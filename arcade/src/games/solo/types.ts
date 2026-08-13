@@ -7,7 +7,7 @@ import type { ComponentType } from 'react'
  * a game that only ever runs in one browser.
  */
 
-export type SoloId = 'oddone'
+export type SoloId = 'oddone' | 'merge' | 'snake' | 'stack' | 'roll' | 'recall'
 
 export type SoloApi = {
   /** Report the running score. The shell displays it and keeps the best. */

@@ -1,7 +1,8 @@
 # Arcade
 
-Four two-player mini games. One player makes a room, gets a four-letter code, the
-other joins. No accounts, no login, no install. There is a solo mode against a bot
+Fifteen small games in three shapes: eight for two players over a four-letter room
+code, six solo score chases, and one party game for a group round a single phone.
+No accounts, no login, no install. Every two-player game also plays against a bot,
 so the app is never a dead end.
 
 **Two players** (or against the bot):
@@ -11,7 +12,9 @@ so the app is never a dead end.
 | Reaction Duel | When the screen flips colour, tap first — tap early and you lose the round. | Best of 5 |
 | Tug | Tap fast and drag the marker onto your side. | 10 seconds |
 | Dot Grab | Dots pop up on a shared board — tap to claim, most dots wins. | 30 seconds |
+| Four | Drop a piece into a column and get four in a row. | First to 2 |
 | Nerve | Flip tiles for points; bank them before you hit the bomb that takes the lot. | First to 30 |
+| Salvo | Three ships hidden in their waters; a hit earns another shot. | Sink all 3 |
 | Shift | Tic-tac-toe where you only ever own three pieces; your fourth removes your oldest. | First to 2 |
 | Word Sprint | Same seven letters for both players, spell the most words. | 60 seconds |
 
@@ -19,7 +22,18 @@ so the app is never a dead end.
 
 | Game | Rule | Scored on |
 | --- | --- | --- |
-| Odd One Out | One square is a slightly different shade — tap it before the timer, and the difference shrinks every level. | Levels reached |
+| Merge | Swipe to slide every tile; equal tiles fuse into one worth double. | Points |
+| Snake | Eat the dot to grow — walls and your own tail are fatal. | Apples |
+| Stack | Tap to drop the sliding block; overhang is sliced off. | Blocks |
+| Roll | Steer a ball through gaps in an endless run that keeps speeding up. | Gates |
+| Recall | Repeat a sequence of pads that grows by one each round. | Rounds |
+| Odd One Out | One square is a slightly different shade — tap it before the timer. | Levels |
+
+**Everyone, one phone:**
+
+| Game | Rule | Players |
+| --- | --- | --- |
+| Imposter | Everyone sees the same secret word except one — say a clue each and work out who is faking. | 3–10, one device |
 
 React + Vite + TypeScript, Tailwind v4, Framer Motion. ~125KB gzipped for the app,
 plus an 86KB dictionary chunk that only loads if someone picks Word Sprint.
@@ -193,7 +207,16 @@ same six methods, with no changes to any game.
 
 ## Adding a game
 
-There are two kinds, and they share almost nothing on purpose.
+There are three kinds, and they share almost nothing on purpose — only the
+design system.
+
+**A party game** runs on one device passed around a group. No room, no seats, no
+score. Export a `PartyModule` from `src/games/party/yourgame/index.tsx` with a
+`Play` component that owns its whole flow, add the id to `PartyId`, and add a line
+to `src/games/party/registry.ts`. Imposter is the worked example: note that the
+hold-to-reveal card hides its word with a 60ms exit rather than a spring, because
+the secret has to be gone the instant a finger lifts — an animation there is a
+privacy hole, not a flourish.
 
 **A solo score game** is much the simpler of the two. It has no opponent, so there
 is nothing to synchronise: no log, no seed, no reducer. Create
@@ -268,6 +291,16 @@ view counts them locally and flushes a single `pull` event every 160ms instead o
 sending one event per tap. Anything continuous (dragging, holding, mashing) needs
 the same treatment.
 
+**And a second: the log is fully shared.** Anything you put in an event is readable
+by the opponent's browser, so hidden information cannot live there. Salvo is the
+worked example — putting fleets in the log would let anyone read the ship positions
+straight out of devtools. Instead each fleet is generated locally and cached in
+`sessionStorage` (keyed by match, so a refresh keeps the same ships), and the
+*defender's* client answers each shot with a plain hit or miss. That answer is all
+that reaches the log. It trusts the defender to report honestly, which is the right
+trade for a game you play with friends, but it is a trust assumption worth knowing
+about.
+
 ---
 
 ## Layout
@@ -284,10 +317,11 @@ arcade/
 └── src/
     ├── net/         transports, useMatch, client-side prediction, gate client
     ├── games/       one directory per two-player game + the registry
-    │   └── solo/    score games, their registry and personal bests
+    │   ├── solo/    score games, their registry and personal bests
+    │   └── party/   single-device group games
     ├── components/  design system and the shared game shell
-    ├── screens/     gate, home, room, picker, ready gate, solo shell
-    └── lib/         theme, accent, sound, motion, pointer detection, seeded RNG
+    ├── screens/     gate, home, room, picker, ready gate, solo + party shells
+    └── lib/         theme, accent, sound, motion, pointer + swipe input, seeded RNG
 ```
 
 Fonts (Bricolage Grotesque for display, Inter for UI) are self-hosted Latin subsets

@@ -3,6 +3,7 @@ import type { GameId } from '../shared/protocol'
 import { normalizeCode } from '../shared/protocol'
 import { CursorField } from './components/CursorField'
 import { botFor } from './games/registry'
+import type { PartyId } from './games/party/types'
 import type { SoloId } from './games/solo/types'
 import { createBotTransport } from './net/botTransport'
 import { gateRequired, gateToken } from './net/gate'
@@ -11,12 +12,14 @@ import type { Transport } from './net/types'
 import { Gate } from './screens/Gate'
 import { Home } from './screens/Home'
 import { Room } from './screens/Room'
+import { PartyPlay } from './screens/PartyPlay'
 import { SoloPlay } from './screens/SoloPlay'
 
 type Route =
   | { name: 'home' }
   | { name: 'room'; transport: Transport; autoSelect?: GameId }
   | { name: 'solo'; game: SoloId }
+  | { name: 'party'; game: PartyId }
 type GateState = 'checking' | 'locked' | 'open'
 
 /** A shared link looks like https://host/#WXYZ. */
@@ -77,15 +80,18 @@ export function App() {
 
   const playSolo = useCallback((game?: GameId) => enter(createBotTransport(botFor), game), [enter])
 
-  // Score games have no room, so they skip the transport entirely.
-  const playSoloScore = useCallback(
-    (game: SoloId) => {
-      active.current?.stop()
-      active.current = null
-      setRoute({ name: 'solo', game })
-    },
-    [],
-  )
+  // Score and party games have no room, so they skip the transport entirely.
+  const playSoloScore = useCallback((game: SoloId) => {
+    active.current?.stop()
+    active.current = null
+    setRoute({ name: 'solo', game })
+  }, [])
+
+  const playParty = useCallback((game: PartyId) => {
+    active.current?.stop()
+    active.current = null
+    setRoute({ name: 'party', game })
+  }, [])
 
   // Landing on a shared link goes straight into the room, but never before the
   // key has been cleared.
@@ -128,10 +134,13 @@ export function App() {
             onJoin={joinRoom}
             onSolo={playSolo}
             onSoloScore={playSoloScore}
+            onParty={playParty}
             initialCode={initialCode}
           />
         ) : route.name === 'solo' ? (
           <SoloPlay id={route.game} onExit={goHome} />
+        ) : route.name === 'party' ? (
+          <PartyPlay id={route.game} onExit={goHome} />
         ) : (
           <Room
             transport={route.transport}

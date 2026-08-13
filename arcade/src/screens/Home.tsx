@@ -8,6 +8,8 @@ import { Magnetic } from '../components/Magnetic'
 import { Press } from '../components/Press'
 import { TopBar } from '../components/TopBar'
 import { GAMES, GAME_ORDER } from '../games/registry'
+import { PARTY_GAMES, PARTY_ORDER } from '../games/party/registry'
+import type { PartyId } from '../games/party/types'
 import { readBest } from '../games/solo/bests'
 import { SOLO_GAMES, SOLO_ORDER } from '../games/solo/registry'
 import type { SoloId } from '../games/solo/types'
@@ -19,12 +21,14 @@ export function Home({
   onJoin,
   onSolo,
   onSoloScore,
+  onParty,
   initialCode = '',
 }: {
   onCreate: () => void
   onJoin: (code: string) => void
   onSolo: (game?: GameId) => void
   onSoloScore: (game: SoloId) => void
+  onParty: (game: PartyId) => void
   initialCode?: string
 }) {
   const [code, setCode] = useState(initialCode)
@@ -81,6 +85,11 @@ export function Home({
             <SectionLabel>On your own</SectionLabel>
             <SoloIndex onPick={onSoloScore} />
           </div>
+
+          <div className="mt-10">
+            <SectionLabel>Everyone, one phone</SectionLabel>
+            <PartyIndex onPick={onParty} />
+          </div>
         </section>
       </main>
     </div>
@@ -89,6 +98,39 @@ export function Home({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <span className="chrome text-muted/70">{children}</span>
+}
+
+/** Single-device group games. */
+function PartyIndex({ onPick }: { onPick: (id: PartyId) => void }) {
+  return (
+    <ul className="mt-2 border-t border-line">
+      {PARTY_ORDER.map((id, i) => {
+        const { meta } = PARTY_GAMES[id]
+        return (
+          <motion.li
+            key={id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={stagger(i + GAME_ORDER.length + SOLO_ORDER.length, 0.05)}
+            className="border-b border-line"
+          >
+            <Press
+              cue="tap"
+              depth={0.99}
+              onClick={() => onPick(id)}
+              aria-label={`Play ${meta.title}`}
+              className="flex w-full items-baseline gap-4 py-5 text-left sm:gap-6"
+            >
+              <span className="display min-w-0 flex-1 text-[1.5rem] leading-none sm:text-[1.875rem]">
+                {meta.title}
+              </span>
+              <span className="chrome shrink-0 text-muted/60">{meta.players}</span>
+            </Press>
+          </motion.li>
+        )
+      })}
+    </ul>
+  )
 }
 
 /** Solo score games, with the number to beat shown inline. */
