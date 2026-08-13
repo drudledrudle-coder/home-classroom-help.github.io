@@ -4,6 +4,7 @@ import type { BaseGameState, GameCtx } from '../types'
 
 export const EV_SHOT = 'shot'
 export const EV_RESULT = 'result'
+export const EV_READY = 'ready'
 
 export const GRID = 6
 export const SHIPS = [3, 2, 2] as const
@@ -17,6 +18,12 @@ export type SalvoState = BaseGameState & {
   shots: Record<Slot, Mark[]>
   /** A shot awaiting its defender's answer. */
   pending: { by: Slot; i: number } | null
+  /**
+   * Who has finished placing their fleet. Only the flag travels — never the
+   * positions — so both clients can agree on when firing may begin without
+   * either learning where the other's ships are.
+   */
+  ready: Record<Slot, boolean>
 }
 
 export function init(): SalvoState {
@@ -27,7 +34,13 @@ export function init(): SalvoState {
     turn: 'host',
     shots: { host: [], guest: [] },
     pending: null,
+    ready: { host: false, guest: false },
   }
+}
+
+/** Firing opens only once both fleets are down. */
+export function bothReady(state: SalvoState): boolean {
+  return state.ready.host && state.ready.guest
 }
 
 /** Whose client owes an answer right now, if anyone's. */
@@ -48,7 +61,13 @@ export function alreadyShot(state: SalvoState, by: Slot, i: number): boolean {
 export function reduce(state: SalvoState, event: MatchEvent, _ctx: GameCtx): SalvoState {
   if (state.phase === 'over' || event.from === 'system') return state
 
+  if (event.type === EV_READY) {
+    if (state.ready[event.from]) return state
+    return { ...state, ready: { ...state.ready, [event.from]: true } }
+  }
+
   if (event.type === EV_SHOT) {
+    if (!bothReady(state)) return state
     if (state.pending || event.from !== state.turn) return state
     const i = Number((event.data as { i?: number } | undefined)?.i)
     if (!Number.isInteger(i) || i < 0 || i >= GRID * GRID) return state
@@ -121,22 +140,55 @@ export function makeFleet(rand: () => number = Math.random): Fleet {
 }
 
 /**
- * The fleet is cached per room and per match in sessionStorage rather than
- * regenerated. A refresh mid-game must return the *same* fleet, or the hits
- * already reported would stop matching the ships.
+ * The cells a ship would occupy if its bow were dropped at `bow`.
+ *
+ * The tail is clamped back inside the grid rather than the placement being
+ * refused, so tapping near an edge slides the ship into the board instead of
+ * doing nothing. On a phone that is the difference between a control that feels
+ * broken and one that feels forgiving — a rejected tap reads as an unresponsive
+ * button, not as a rule.
  */
-export function fleetFor(code: string, epoch: number, startedAt: number): Fleet {
-  const key = `arcade.fleet.${code}.${epoch}.${startedAt}`
+export function shipCells(bow: number, size: number, horizontal: boolean): number[] {
+  const x = bow % GRID
+  const y = Math.floor(bow / GRID)
+  const startX = horizontal ? Math.min(x, GRID - size) : x
+  const startY = horizontal ? y : Math.min(y, GRID - size)
+
+  const cells: number[] = []
+  for (let k = 0; k < size; k++) {
+    cells.push(horizontal ? startY * GRID + startX + k : (startY + k) * GRID + startX)
+  }
+  return cells
+}
+
+/** Free of every cell already occupied. Overlap is the only real rejection. */
+export function fits(cells: number[], taken: Iterable<number>): boolean {
+  const busy = new Set(taken)
+  return cells.every((c) => !busy.has(c))
+}
+
+const fleetKey = (startedAt: number) => `arcade.fleet.room.0.${startedAt}`
+
+/**
+ * The fleet lives in sessionStorage, per match. A refresh mid-game must return
+ * the *same* ships, or the hits already reported would stop matching them.
+ */
+export function loadFleet(startedAt: number): Fleet | null {
   try {
-    const stored = sessionStorage.getItem(key)
-    if (stored) {
-      const parsed = JSON.parse(stored) as unknown
-      if (Array.isArray(parsed) && parsed.length === HITS_TO_WIN) return parsed as Fleet
-    }
-    const fresh = makeFleet()
-    sessionStorage.setItem(key, JSON.stringify(fresh))
-    return fresh
+    const stored = sessionStorage.getItem(fleetKey(startedAt))
+    if (!stored) return null
+    const parsed = JSON.parse(stored) as unknown
+    if (Array.isArray(parsed) && parsed.length === HITS_TO_WIN) return parsed as Fleet
+    return null
   } catch {
-    return makeFleet()
+    return null
+  }
+}
+
+export function saveFleet(startedAt: number, fleet: Fleet): void {
+  try {
+    sessionStorage.setItem(fleetKey(startedAt), JSON.stringify(fleet))
+  } catch {
+    /* storage disabled; the fleet still holds for this page */
   }
 }

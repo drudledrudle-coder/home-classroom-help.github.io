@@ -14,7 +14,7 @@ so the app is never a dead end.
 | Dot Grab | Dots pop up on a shared board — tap to claim, most dots wins. | 30 seconds |
 | Four | Drop a piece into a column and get four in a row. | First to 2 |
 | Nerve | Flip tiles for points; bank them before you hit the bomb that takes the lot. | First to 30 |
-| Salvo | Three ships hidden in their waters; a hit earns another shot. | Sink all 3 |
+| Salvo | Place three ships, then hunt theirs; a hit earns another shot. | Sink all 3 |
 | Shift | Tic-tac-toe where you only ever own three pieces; your fourth removes your oldest. | First to 2 |
 | Word Sprint | Same seven letters for both players, spell the most words. | 60 seconds |
 
@@ -154,6 +154,7 @@ so the pointer half is free; the keyboard half is not, and is wired per game.
 | Four | Tap a column | 1–7, or arrows + Enter |
 | Recall | Tap a pad | 1–4 |
 | Shift, Nerve, Salvo, Odd One Out | Tap a cell | Arrows + Enter |
+| Salvo (placing) | Tap to drop a ship, tap it again to lift | Arrows + Enter, R to rotate |
 | Word Sprint | Tap the letters | Type, Enter, Backspace |
 | Dot Grab, Imposter | Tap | — (spatial and physical; a keyboard adds nothing) |
 
@@ -172,9 +173,17 @@ Each bot maps the level onto its own constants rather than sharing one knob:
 Reaction moves its reaction floor between 430ms and 165ms, Tug its tap rate between
 3.2 and 9.4 a second, Four and Shift how often they pass up the correct move, Sprint
 how many words it finds and how long they are, Grab how many dots it even attempts,
-Nerve how well it judges the bet, and Salvo how reliably it follows up a hit. The
-control is a real `<input type="range">`, so it drags, takes arrow keys and reads
-correctly to assistive technology.
+Nerve how well it judges the bet, and Salvo how reliably it follows up a hit.
+
+The track owns the gesture rather than the range input. A native range thumb has to
+be *grabbed* on iOS Safari — tapping or dragging the bare track moves nothing — and
+this thumb is invisible, so on an iPhone most drags did nothing at all. The native
+thumb also has width, so its travel is inset by half a thumb at each end while the
+notches are drawn at a true 0–100%, and the two never quite agreed. Now a press
+anywhere jumps to the nearest notch and keeps tracking to release, identically on
+every platform, with a 44px hit area. The `<input type="range">` is still there for
+the keyboard and the accessibility tree, with pointer events off so it cannot
+compete for the gesture.
 
 ## Devices
 
@@ -186,12 +195,31 @@ landscape, iPad mini/Air/Pro portrait, iPad landscape, 1440 laptop and 1920 desk
 — in both themes, with no horizontal overflow, no clipped playfield and no touch
 target under 44px.
 
-Two cases needed real work rather than a breakpoint. Shift's board is square, so on
+The board scrolls; the chrome does not. The room is a fixed-height,
+`overflow-hidden` container so a board never drags the page around mid-tap, but a
+game taller than the viewport was being silently squeezed instead. The game area is
+now its own scroll port, leaving the score line and the result card pinned. The
+inner `min-h-full` wrapper is the part that matters: every view centres itself, and
+a flex child that overflows a centred container spills past *both* edges — including
+the top, which no scrolling can reach. Letting the wrapper grow instead leaves
+`justify-center` no free space to distribute, so tall boards start at their true top
+and short ones stay centred exactly as before.
+
+Three cases needed real work rather than a breakpoint. Shift's board is square, so on
 a phone in landscape its *height* runs out first — bounding it only by width would
 render it 512px tall inside 230px of space and clip it, so its width is also capped
 against the leftover viewport height. And a `short` variant (`max-height: 560px`)
 compresses the chrome when a phone is held sideways, since that is a height problem
-and normal breakpoints only see width.
+and normal breakpoints only see width. Salvo's placement stage goes further and
+switches to two columns under that variant — board on the left, ships and buttons on
+the right — because stacked they pushed Ready off the bottom of a landscape phone,
+and a primary action below the fold reads as a missing one.
+
+A board is also capped by the height actually left over, not just by width, and its
+labels are capped to the same number so they line up with its edges. Capping only
+the grid meant that whenever height was the binding constraint the board shrank
+while its header stayed full width, and the screen looked off-centre for no visible
+reason.
 
 Cursor-driven motion — the trailing light, the magnetic buttons, the rule that
 slides between index rows — is gated behind `(pointer: fine)` and switched off
@@ -341,12 +369,18 @@ the same treatment.
 **And a second: the log is fully shared.** Anything you put in an event is readable
 by the opponent's browser, so hidden information cannot live there. Salvo is the
 worked example — putting fleets in the log would let anyone read the ship positions
-straight out of devtools. Instead each fleet is generated locally and cached in
+straight out of devtools. Instead each fleet is chosen locally and cached in
 `sessionStorage` (keyed by match, so a refresh keeps the same ships), and the
 *defender's* client answers each shot with a plain hit or miss. That answer is all
 that reaches the log. It trusts the defender to report honestly, which is the right
 trade for a game you play with friends, but it is a trust assumption worth knowing
 about.
+
+Letting players *place* their own ships fits the same rule without bending it. The
+positions never travel; the only thing added to the log is a `ready` flag per side,
+which is enough for both clients to agree on when firing opens and tells neither of
+them anything about where the ships are. Firing stays shut until both flags are set,
+so a player who readies early simply waits.
 
 ---
 

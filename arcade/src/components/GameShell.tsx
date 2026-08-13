@@ -68,8 +68,25 @@ export function GameShell({
         </div>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <View state={state} ctx={ctx} clock={clock} send={match.send} />
+      {/* The board scrolls, the chrome does not. The room is a fixed-height,
+          overflow-hidden container so a board never drags the page around
+          mid-tap — but that also meant a game taller than the viewport (Salvo
+          stacks two grids) was silently squeezed with no way to reach the rest.
+          Scrolling here keeps the score line and the result card pinned while
+          giving the board somewhere to go. `overscroll-contain` stops a flick at
+          the end of the board turning into a pull-to-refresh.
+
+          The inner `min-h-full` wrapper is what makes that safe. Every view
+          centres itself with `justify-center`, and a flex child that overflows a
+          centred container spills equally past *both* edges — including the top,
+          which no amount of scrolling can reach. Letting the wrapper grow past
+          the viewport instead leaves `justify-center` with no free space to
+          distribute, so tall boards start at their true top and short ones stay
+          centred exactly as before. */}
+      <div className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+        <div className="flex min-h-full flex-col">
+          <View state={state} ctx={ctx} clock={clock} send={match.send} />
+        </div>
       </div>
 
       <AnimatePresence>

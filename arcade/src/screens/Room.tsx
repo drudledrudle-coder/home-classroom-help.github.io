@@ -62,6 +62,22 @@ export function Room({
     transport.start()
   }, [transport])
 
+  // Keep the room's code in the URL for as long as we are in it.
+  //
+  // A guest arrives at #CODE and so survives a refresh for free, but the host
+  // never had the code in the URL at all — the server assigns it after the room
+  // is created — so refreshing mid-game dropped them on the home screen while
+  // their seat sat waiting. The two paths are now identical: whoever is in a
+  // room has its code in the URL, and the reload rejoins with the same playerId
+  // and replays the log. `goHome` still clears it, so leaving really leaves.
+  const code = match.code
+  const isBot = match.isBot
+  useEffect(() => {
+    if (isBot || !code) return
+    if (window.location.hash === `#${code}`) return
+    history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${code}`)
+  }, [code, isBot])
+
   // Entering from a "play this game now" tap on the home screen.
   useEffect(() => {
     if (!autoSelect) return

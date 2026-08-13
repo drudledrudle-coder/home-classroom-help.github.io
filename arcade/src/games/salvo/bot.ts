@@ -1,7 +1,7 @@
 import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
-import { EV_RESULT, EV_SHOT, GRID, alreadyShot, makeFleet, replay } from './logic'
+import { EV_READY, EV_RESULT, EV_SHOT, GRID, alreadyShot, bothReady, makeFleet, replay } from './logic'
 import type { SalvoState } from './logic'
 
 /**
@@ -14,6 +14,7 @@ import type { SalvoState } from './logic'
 export const salvoBot: BotFactory = () => {
   let fleet: number[] | null = null
   let pendingFor = -1
+  let readySent = false
 
   const neighbours = (i: number): number[] => {
     const x = i % GRID
@@ -37,6 +38,16 @@ export const salvoBot: BotFactory = () => {
       if (!fleet) fleet = makeFleet(mulberry32(ctx.seed ^ 0x51a1))
 
       const rand = mulberry32(ctx.seed + gameEvents.length * 3_571)
+
+      // Its fleet is already down; it just has to say so. A short beat, so the
+      // opponent's "ready" does not land before the player has read the screen.
+      if (!state.ready.guest) {
+        if (readySent) return
+        readySent = true
+        api.emit(EV_READY, undefined, 500 + Math.floor(rand() * 400))
+        return
+      }
+      if (!bothReady(state)) return
 
       // Answering an incoming shot takes priority over taking its own.
       if (state.pending && state.pending.by === 'host') {
