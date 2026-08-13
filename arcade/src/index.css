@@ -1,0 +1,196 @@
+@import 'tailwindcss';
+
+/* Theme is driven by an attribute on <html>, not by the media query alone, so the
+   manual toggle can override the OS preference. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@font-face {
+  font-family: 'Bricolage Grotesque Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('./fonts/bricolage-grotesque-latin.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/inter-latin.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+/* ---------------------------------------------------------------------------
+   Palette. Light is warm paper, dark is warm near-black — each picked on its
+   own terms rather than one being the inversion of the other. The accent
+   shifts value between modes so it stays legible against both grounds while
+   reading as the same colour.
+   --------------------------------------------------------------------------- */
+
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --t-bg: #f6f4ef;
+  --t-surface: #ffffff;
+  --t-surface-2: #edeae2;
+  --t-line: #dfdbd1;
+  --t-line-strong: #c9c4b7;
+  --t-ink: #17150f;
+  --t-muted: #6d6960;
+  --t-accent: #de3009;
+  --t-accent-ink: #ffffff;
+  --t-accent-wash: #fbe9e4;
+  --t-shadow: 0 1px 2px rgb(23 21 15 / 0.05);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --t-bg: #0b0b0c;
+  --t-surface: #131315;
+  --t-surface-2: #1b1b1e;
+  --t-line: #2a2a2f;
+  --t-line-strong: #3c3c43;
+  --t-ink: #f4f2ed;
+  --t-muted: #8b8a90;
+  --t-accent: #ff4a2b;
+  --t-accent-ink: #0b0b0c;
+  --t-accent-wash: #2a1410;
+  --t-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+
+@theme inline {
+  --font-display: 'Bricolage Grotesque Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-bg: var(--t-bg);
+  --color-surface: var(--t-surface);
+  --color-surface-2: var(--t-surface-2);
+  --color-line: var(--t-line);
+  --color-line-strong: var(--t-line-strong);
+  --color-ink: var(--t-ink);
+  --color-muted: var(--t-muted);
+  --color-accent: var(--t-accent);
+  --color-accent-ink: var(--t-accent-ink);
+  --color-accent-wash: var(--t-accent-wash);
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    background-color: var(--t-bg);
+    /* Stops iOS rubber-banding from revealing the page behind the app. */
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--t-bg);
+    color: var(--t-ink);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    /* Removes the 300ms mobile tap delay without disabling pinch zoom. */
+    touch-action: manipulation;
+  }
+
+  input {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--t-accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  /* Focus rings are for keyboards. Touch and mouse presses get the motion
+     feedback instead, so they should not leave a ring behind. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+@layer utilities {
+  /* Big numerals must not reflow as they count. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* The small tracked-out caps used for all chrome, against which the huge
+     display numerals get their scale contrast. */
+  .chrome {
+    font-size: 0.6875rem;
+    line-height: 1;
+    font-weight: 560;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .display {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.86;
+  }
+
+  .no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .safe-b {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-t {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+}
+
+/* Applied to <html> only while a theme switch is in flight, so the palette
+   cross-fades instead of snapping — and so these transitions never fight with
+   the spring animations during normal play. */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition:
+    background-color 420ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 420ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 420ms cubic-bezier(0.4, 0, 0.2, 1),
+    fill 420ms cubic-bezier(0.4, 0, 0.2, 1),
+    stroke 420ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition-delay: 0ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-transition,
+  .theme-transition *,
+  .theme-transition *::before,
+  .theme-transition *::after {
+    transition: none !important;
+  }
+}
