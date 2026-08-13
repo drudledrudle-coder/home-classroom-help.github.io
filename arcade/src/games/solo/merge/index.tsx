@@ -4,6 +4,7 @@ import { springSnap, springSoft } from '../../../lib/motion'
 import { useDirectionInput } from '../../../lib/input'
 import type { Dir } from '../../../lib/input'
 import { useSound } from '../../../lib/sound'
+import { useTheme } from '../../../lib/theme'
 import type { SoloApi, SoloModule } from '../types'
 
 const SIZE = 4
@@ -80,18 +81,49 @@ function canMove(tiles: Tile[]): boolean {
   return (['up', 'down', 'left', 'right'] as Dir[]).some((d) => slide(tiles, d).moved)
 }
 
-/** Higher tiles sit heavier in the accent; the board reads as a gradient of one colour. */
-function tileStyle(value: number): { background: string; color: string } {
-  const step = Math.min(11, Math.log2(value))
-  const mix = 8 + step * 8.5
+/**
+ * Every value gets its own colour, but derived rather than picked: the tile
+ * walks lightness, chroma and *hue* away from whichever accent is active. So a
+ * board of mixed tiles reads as one deliberate ramp instead of a bag of
+ * unrelated colours, and it still follows the accent the player chose.
+ *
+ * Relative colour syntax does the hue rotation. Where it is unsupported, the
+ * older single-hue ramp is still perfectly legible — values stay distinguishable
+ * by weight, just not by hue.
+ */
+const SUPPORTS_RELATIVE =
+  typeof CSS !== 'undefined' &&
+  typeof CSS.supports === 'function' &&
+  CSS.supports('color', 'oklch(from red 0.5 0.1 calc(h + 20))')
+
+function tileStyle(value: number, dark: boolean): { background: string; color: string } {
+  // 2 -> 1, 4 -> 2, ... 2048 -> 11.
+  const step = Math.min(11, Math.max(1, Math.log2(value)))
+  const t = (step - 1) / 10
+
+  if (!SUPPORTS_RELATIVE) {
+    const mix = 8 + t * 78
+    return {
+      background: `color-mix(in srgb, var(--t-accent) ${mix}%, var(--t-surface))`,
+      color: mix > 55 ? 'var(--t-accent-ink)' : 'var(--t-ink)',
+    }
+  }
+
+  // Light mode starts pale and deepens; dark mode starts muted and brightens.
+  // Either way the low tiles recede and the high ones arrive.
+  const lightness = dark ? 0.32 + t * 0.42 : 0.93 - t * 0.4
+  const chroma = 0.035 + t * 0.15
+  const hue = t * 150
+
   return {
-    background: `color-mix(in srgb, var(--t-accent) ${mix}%, var(--t-surface))`,
-    color: mix > 55 ? 'var(--t-accent-ink)' : 'var(--t-ink)',
+    background: `oklch(from var(--t-accent) ${lightness.toFixed(3)} ${chroma.toFixed(3)} calc(h + ${hue.toFixed(1)}))`,
+    color: lightness > 0.62 ? 'oklch(0.21 0.02 0)' : 'oklch(0.97 0.008 0)',
   }
 }
 
 function MergePlay({ api }: { api: SoloApi }) {
   const sound = useSound()
+  const { theme } = useTheme()
   const [tiles, setTiles] = useState<Tile[]>(() => spawn(spawn([])))
   const score = useRef(0)
   const dead = useRef(false)
@@ -168,7 +200,7 @@ function MergePlay({ api }: { api: SoloApi }) {
                 style={{
                   width: 'calc(25% - 0.375rem)',
                   height: 'calc(25% - 0.375rem)',
-                  ...tileStyle(tile.value),
+                  ...tileStyle(tile.value, theme === 'dark'),
                 }}
               >
                 <motion.span

@@ -123,19 +123,23 @@ function StackPlay({ api }: { api: SoloApi }) {
           }}
         />
 
+        {/* The tower is built bottom-up: within the visible window the oldest
+            block sits lowest and each new one lands on top of it. As the stack
+            grows past the window the view effectively rises with it, which is
+            what makes it read as climbing rather than filling downwards. */}
         {shown.map((row, i) => {
-          const depth = shown.length - 1 - i
+          const fromTop = shown.length - 1 - i
           return (
             <motion.div
               key={rows.length - shown.length + i}
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: Math.max(0.18, 1 - depth * 0.1), y: 0 }}
+              initial={{ opacity: 0, y: -14 }}
+              animate={{ opacity: Math.max(0.16, 1 - fromTop * 0.11), y: 0 }}
               transition={springSnap}
               className="absolute rounded-sm"
               style={{
                 left: `${row.x}%`,
                 width: `${row.w}%`,
-                bottom: `${depth * ROW_H}px`,
+                bottom: `${i * ROW_H}px`,
                 height: `${ROW_H - 3}px`,
                 backgroundColor: 'var(--t-ink)',
               }}

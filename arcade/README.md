@@ -265,6 +265,14 @@ is nothing to synchronise: no log, no seed, no reducer. Create
 `src/games/solo/registry.ts`. The shell handles the score line, the personal best,
 the result card and "go again". `direction: 'low'` scores a time instead of points.
 
+If your game moves every frame, write those frames **straight to the DOM node from a
+rAF loop** rather than through state — Snake, Roll and Stack all do. A `setState` per
+frame re-renders the whole board sixty times a second for one thing that moved, and it
+stutters exactly when the player is steering. It is also what makes a grid game look
+smooth: Snake still *simulates* on a discrete grid, but each frame it pushes the head a
+fraction of a cell forward and retracts the tail by the same fraction along one stroked
+polyline, so the logic stays simple while the motion stops stepping.
+
 **A two-player game** is a directory of four files. Nothing outside it needs to know
 it exists except one line in the registry.
 

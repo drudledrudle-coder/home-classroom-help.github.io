@@ -8,9 +8,11 @@ import type { SoloApi, SoloModule } from '../types'
 
 const GRID = 13
 const START_MS = 190
-const MIN_MS = 85
+const MIN_MS = 88
 /** How much faster each apple makes it. */
 const SPEEDUP_MS = 4
+/** Snake thickness in cell units. */
+const THICKNESS = 0.74
 
 type Cell = { x: number; y: number }
 
@@ -33,20 +35,39 @@ function placeApple(snake: Cell[]): Cell {
   return open[Math.floor(Math.random() * open.length)] ?? { x: 0, y: 0 }
 }
 
+/**
+ * The snake is simulated on a grid but drawn as one continuous rounded path,
+ * interpolated between ticks.
+ *
+ * Drawing a square per cell makes the movement read as a series of jumps, which
+ * is what "blocky" actually means here — it is the *stepping*, not the corners.
+ * So the body is a polyline through cell centres with round caps and joins, and
+ * every frame the head is pushed a fraction of a cell towards where it is going
+ * while the tail retracts by the same fraction. The logic stays discrete; only
+ * the rendering is continuous.
+ *
+ * The path is written straight to the SVG element from a rAF loop, so the
+ * smoothing costs one attribute write per frame rather than a React render.
+ */
 function SnakePlay({ api }: { api: SoloApi }) {
   const sound = useSound()
-  const [snake, setSnake] = useState<Cell[]>([
+  const [apple, setApple] = useState<Cell>({ x: 6, y: 3 })
+  const [started, setStarted] = useState(false)
+  const [length, setLength] = useState(3)
+
+  const pathRef = useRef<SVGPolylineElement>(null)
+  const headRef = useRef<SVGCircleElement>(null)
+
+  const body = useRef<Cell[]>([
     { x: 6, y: 7 },
     { x: 6, y: 8 },
     { x: 6, y: 9 },
   ])
-  const [apple, setApple] = useState<Cell>({ x: 6, y: 3 })
-  const [started, setStarted] = useState(false)
-
-  // Direction is held in refs: the tick reads it, and a queue means two quick
-  // turns in one tick both register instead of the second overwriting the first.
   const heading = useRef<Dir>('up')
   const queued = useRef<Dir[]>([])
+  const grewThisTick = useRef(false)
+  const tickAt = useRef(0)
+  const tickMs = useRef(START_MS)
   const eaten = useRef(0)
   const dead = useRef(false)
 
@@ -61,56 +82,102 @@ function SnakePlay({ api }: { api: SoloApi }) {
 
   useDirectionInput(turn, true)
 
+  /* -- simulation ---------------------------------------------------------- */
   useEffect(() => {
     if (!started || dead.current) return
     let timer: ReturnType<typeof setTimeout>
 
-    const tick = () => {
-      setSnake((current) => {
-        if (dead.current) return current
+    const step = () => {
+      const cells = body.current
+      const next = queued.current.shift()
+      if (next) heading.current = next
 
-        const next = queued.current.shift()
-        if (next) heading.current = next
-        const step = DELTA[heading.current]
-        const head = { x: current[0].x + step.x, y: current[0].y + step.y }
+      const move = DELTA[heading.current]
+      const head = { x: cells[0].x + move.x, y: cells[0].y + move.y }
 
-        // Walls kill. No wrapping — that is the whole tension of the frame.
-        const hitWall = head.x < 0 || head.y < 0 || head.x >= GRID || head.y >= GRID
-        const hitSelf = current.some((c, i) => i < current.length - 1 && key(c) === key(head))
-        if (hitWall || hitSelf) {
-          dead.current = true
-          sound.play('foul')
-          setTimeout(() => api.end(), 260)
-          return current
-        }
+      // Walls kill. No wrapping — that is the whole tension of the frame.
+      const hitWall = head.x < 0 || head.y < 0 || head.x >= GRID || head.y >= GRID
+      const hitSelf = cells.some((c, i) => i < cells.length - 1 && key(c) === key(head))
+      if (hitWall || hitSelf) {
+        dead.current = true
+        sound.play('foul')
+        setTimeout(() => api.end(), 300)
+        return
+      }
 
-        const ate = key(head) === key(apple)
-        const grown = [head, ...current]
-        if (ate) {
-          eaten.current += 1
-          api.setScore(eaten.current)
-          sound.play('pop')
-          setApple(placeApple(grown))
-        } else {
-          grown.pop()
-        }
-        return grown
-      })
+      const ate = key(head) === key(apple)
+      cells.unshift(head)
+      grewThisTick.current = ate
 
-      const delay = Math.max(MIN_MS, START_MS - eaten.current * SPEEDUP_MS)
-      timer = setTimeout(tick, delay)
+      if (ate) {
+        eaten.current += 1
+        api.setScore(eaten.current)
+        setLength(cells.length)
+        sound.play('pop')
+        setApple(placeApple(cells))
+      } else {
+        cells.pop()
+      }
+
+      tickAt.current = performance.now()
+      tickMs.current = Math.max(MIN_MS, START_MS - eaten.current * SPEEDUP_MS)
+      timer = setTimeout(step, tickMs.current)
     }
 
-    timer = setTimeout(tick, START_MS)
+    tickAt.current = performance.now()
+    timer = setTimeout(step, tickMs.current)
     return () => clearTimeout(timer)
   }, [started, apple, api, sound])
 
-  const unit = 100 / GRID
+  /* -- rendering ----------------------------------------------------------- */
+  useEffect(() => {
+    let raf = 0
+
+    const draw = (now: number) => {
+      const cells = body.current
+      const poly = pathRef.current
+      if (poly && cells.length) {
+        // Fraction of the way to the next cell, so the body glides rather than
+        // hopping. Clamped, since a backgrounded tab can leave `now` far ahead.
+        const t = dead.current
+          ? 0
+          : Math.max(0, Math.min(1, (now - tickAt.current) / tickMs.current))
+
+        const move = DELTA[heading.current]
+        const points: string[] = []
+
+        // Head, pushed forward into the cell it is entering.
+        points.push(`${cells[0].x + 0.5 + move.x * t},${cells[0].y + 0.5 + move.y * t}`)
+        for (const c of cells) points.push(`${c.x + 0.5},${c.y + 0.5}`)
+
+        // Tail, retracting by the same fraction — unless the snake just ate, in
+        // which case it stays put and the body genuinely grows.
+        if (!grewThisTick.current && cells.length >= 2) {
+          const last = cells[cells.length - 1]
+          const prev = cells[cells.length - 2]
+          points[points.length - 1] =
+            `${last.x + 0.5 + (prev.x - last.x) * t},${last.y + 0.5 + (prev.y - last.y) * t}`
+        }
+
+        poly.setAttribute('points', points.join(' '))
+
+        const head = headRef.current
+        if (head) {
+          head.setAttribute('cx', String(cells[0].x + 0.5 + move.x * t))
+          head.setAttribute('cy', String(cells[0].y + 0.5 + move.y * t))
+        }
+      }
+      raf = requestAnimationFrame(draw)
+    }
+
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [])
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-3 sm:px-6">
       <div className="flex items-baseline justify-between pb-3">
-        <span className="chrome text-muted">Length {snake.length}</span>
+        <span className="chrome text-muted">Length {length}</span>
         <span className="chrome text-muted/60">Swipe or arrows</span>
       </div>
 
@@ -118,47 +185,31 @@ function SnakePlay({ api }: { api: SoloApi }) {
         className="relative aspect-square w-full overflow-hidden rounded-2xl border border-line bg-surface"
         style={{ maxWidth: 'min(100%, calc(100dvh - 16rem))' }}
       >
-        <motion.div
-          animate={{ scale: 1 }}
-          className="absolute rounded-full"
-          style={{
-            left: `${apple.x * unit}%`,
-            top: `${apple.y * unit}%`,
-            width: `${unit}%`,
-            height: `${unit}%`,
-            padding: '0.15rem',
-          }}
-        >
-          <motion.span
-            animate={{ scale: [1, 0.82, 1] }}
-            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-            className="block h-full w-full rounded-full"
-            style={{ backgroundColor: 'var(--t-accent)' }}
+        <svg viewBox={`0 0 ${GRID} ${GRID}`} className="absolute inset-0 h-full w-full">
+          <motion.circle
+            cx={apple.x + 0.5}
+            cy={apple.y + 0.5}
+            r={THICKNESS / 2}
+            fill="var(--t-accent)"
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={springSnap}
+            style={{ transformOrigin: `${apple.x + 0.5}px ${apple.y + 0.5}px` }}
           />
-        </motion.div>
 
-        {snake.map((cell, i) => (
-          <div
-            key={`${i}-${key(cell)}`}
-            className="absolute"
-            style={{
-              left: `${cell.x * unit}%`,
-              top: `${cell.y * unit}%`,
-              width: `${unit}%`,
-              height: `${unit}%`,
-              padding: '0.09rem',
-            }}
-          >
-            <div
-              className="h-full w-full"
-              style={{
-                backgroundColor: 'var(--t-ink)',
-                opacity: i === 0 ? 1 : Math.max(0.35, 1 - i * 0.035),
-                borderRadius: i === 0 ? '0.3rem' : '0.2rem',
-              }}
-            />
-          </div>
-        ))}
+          {/* One stroked polyline for the whole body: round joins and caps mean
+              the corners curve instead of stepping. */}
+          <polyline
+            ref={pathRef}
+            fill="none"
+            stroke="var(--t-ink)"
+            strokeWidth={THICKNESS}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.92}
+          />
+          <circle ref={headRef} r={THICKNESS / 2} fill="var(--t-ink)" />
+        </svg>
 
         {!started ? (
           <motion.div
