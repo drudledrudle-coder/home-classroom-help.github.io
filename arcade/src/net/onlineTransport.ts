@@ -229,6 +229,9 @@ export function createOnlineTransport(init: OnlineInit): Transport {
           epoch: state.epoch,
           push: sending,
           wait: held,
+          // Only ask the server to read the room aggressively while a match is
+          // actually in play; in the lobby nobody is waiting on a move.
+          hot: tempo === 'active',
         },
         held,
         heldAbort ?? undefined,

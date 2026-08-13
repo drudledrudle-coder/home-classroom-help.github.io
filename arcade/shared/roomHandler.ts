@@ -136,8 +136,10 @@ export type HoldOptions = {
    * their opponent.
    */
   holdMs: number
-  /** How often a parked request re-reads the room. */
+  /** How often a parked request re-reads the room, in the lobby. */
   pollMs: number
+  /** How often it re-reads while a match is actually in play. */
+  hotPollMs: number
   sleep: (ms: number) => Promise<void>
   now: () => number
 }
@@ -148,9 +150,17 @@ export const DEFAULT_HOLD: HoldOptions = {
   // missed before an opponent is called dropped, which keeps a slow phone from
   // being mistaken for an absent one.
   holdMs: 3_000,
-  // Each tick is a store read, so this trades discovery latency against read
-  // volume: 120ms means ~50ms of average discovery delay for ~25 reads a hold.
-  pollMs: 120,
+  // Each tick is a store read, so these trade discovery latency against read
+  // volume. Nobody is waiting on a move in the lobby, so it ticks slowly and
+  // costs less than it used to.
+  pollMs: 220,
+  // Measured: 300ms gives a 335ms median for an opponent's move, 120ms gives
+  // 96ms, and 45ms gives 93ms. Below roughly 100ms the interval stops being the
+  // bottleneck — what is left is the HTTP round trip and the render, which no
+  // amount of faster reading removes. So this sits just under that floor rather
+  // than as low as it will go: 45ms would nearly triple the read volume to buy
+  // about 3ms.
+  hotPollMs: 70,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
 }
@@ -280,8 +290,10 @@ async function holdOpen(
   // change worth waking for; a heartbeat is not.
   const before = membership(first.peers)
 
+  const step = req.hot ? hold.hotPollMs : hold.pollMs
+
   while (hold.now() < deadline) {
-    await hold.sleep(hold.pollMs)
+    await hold.sleep(step)
 
     const stored = await store.read(code)
     // The room went away under us; let the client re-handshake.

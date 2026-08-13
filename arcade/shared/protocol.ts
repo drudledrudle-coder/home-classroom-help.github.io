@@ -86,6 +86,15 @@ export type SyncReq = {
    * event arrives on the next network hop rather than on the next tick.
    */
   wait?: boolean
+  /**
+   * A match is actually in play, so answer as fast as possible.
+   *
+   * Each tick of a held request is a store read, so the polling rate is a
+   * straight trade of read volume against how quickly a move is noticed. That
+   * trade is only worth making while someone is waiting on a move: in the lobby
+   * a fast tick buys nothing and costs the same.
+   */
+  hot?: boolean
 }
 
 /** Clears the event log and bumps the epoch, so a rematch starts from zero. */

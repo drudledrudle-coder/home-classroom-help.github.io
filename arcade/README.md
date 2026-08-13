@@ -322,6 +322,17 @@ Three details make it work:
   presence write — A syncs, B wakes, B syncs, A wakes, for ever. That ping-pong turned
   the hold into a continuous write loop and wiped out the latency gain.
 
+**The interval is no longer the bottleneck.** Measured medians for an opponent's
+move at different hold-read intervals: 300ms gives 335ms, 120ms gives 96ms, 45ms
+gives 93ms. Below roughly 100ms it stops mattering, because what remains is the HTTP
+round trip and the render — no amount of faster reading removes those. `hotPollMs`
+therefore sits at 70ms, just under that floor, rather than as low as it will go;
+45ms would nearly triple read volume to buy about 3ms. The lobby reads at 220ms,
+since nobody there is waiting on a move.
+
+That floor is the honest argument for a socket: it is the per-event HTTP request
+itself, and only a persistent connection removes it.
+
 `PRESENCE_TIMEOUT_MS` is sized against the hold: a parked client only heartbeats when
 its request starts, so the timeout allows three missed beats. Lower the hold and you
 can lower the timeout with it.
