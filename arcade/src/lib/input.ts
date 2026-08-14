@@ -9,9 +9,9 @@ export type Dir = 'up' | 'down' | 'left' | 'right'
  * Small on purpose. Steering a snake is a flick of the thumb, not a drag across
  * the screen, and a long threshold reads as the game ignoring you.
  */
-const SWIPE_MIN_PX = 14
+const SWIPE_MIN_PX = 20
 /** Minimum gap between two directions from one continuous drag. */
-const SWIPE_COOLDOWN_MS = 55
+const SWIPE_COOLDOWN_MS = 110
 
 /**
  * Directional input for the grid games. Swipe on touch, arrows or WASD on a
@@ -22,7 +22,19 @@ const SWIPE_COOLDOWN_MS = 55
  * and a swipe that starts on a tile should count the same as one that starts
  * on the gap between tiles.
  */
-export function useDirectionInput(onDir: (dir: Dir) => void, enabled = true): void {
+export function useDirectionInput(
+  onDir: (dir: Dir) => void,
+  enabled = true,
+  /**
+   * Keep reading the gesture while the finger is still down.
+   *
+   * Only for games you *steer*. A game that acts once per swipe (Merge slides
+   * the whole board) must stay one-per-gesture, or a single long drag fires
+   * three or four moves and the board runs away from the player — which is
+   * exactly what continuous mode did to it.
+   */
+  continuous = false,
+): void {
   // Kept in a ref so changing the handler does not tear down the listeners
   // mid-swipe, which would drop the gesture.
   const handler = useRef(onDir)
@@ -59,7 +71,7 @@ export function useDirectionInput(onDir: (dir: Dir) => void, enabled = true): vo
     // instinctively tries — did nothing. Re-anchoring after each turn lets a
     // single continuous drag produce left, then up, then right.
     const onMove = (event: PointerEvent) => {
-      if (!start.active) return
+      if (!continuous || !start.active) return
       const now = event.timeStamp
       if (now - start.firedAt < SWIPE_COOLDOWN_MS) return
 
@@ -116,7 +128,7 @@ export function useDirectionInput(onDir: (dir: Dir) => void, enabled = true): vo
       window.removeEventListener('pointercancel', onUp)
       window.removeEventListener('keydown', onKey)
     }
-  }, [enabled])
+  }, [enabled, continuous])
 }
 
 /**

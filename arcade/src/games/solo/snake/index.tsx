@@ -133,7 +133,7 @@ function SnakePlay({ api }: { api: SoloApi }) {
     if (queued.current.length < 2) queued.current.push(dir)
   }, [])
 
-  useDirectionInput(turn, true)
+  useDirectionInput(turn, true, true)
 
   /* -- simulation ---------------------------------------------------------- */
   useEffect(() => {

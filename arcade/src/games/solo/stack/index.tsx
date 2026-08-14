@@ -107,7 +107,18 @@ function StackPlay({ api }: { api: SoloApi }) {
     // Fires on every clean landing, not just the ones that pay out width —
     // the player needs to know the timing was right the moment it happens,
     // otherwise a perfect drop is indistinguishable from a lucky one.
-    if (perfect) setHit({ n: hitId.current++, x: left, w: overlap, y: stack.length })
+    if (perfect) {
+      // Clamped to the visible window. The tower only renders its last
+      // VISIBLE_ROWS and lays them out by their index *within that window*, so
+      // an absolute height sent the ring climbing off the top of the board once
+      // the stack grew past it.
+      setHit({
+        n: hitId.current++,
+        x: left,
+        w: overlap,
+        y: Math.min(stack.length, VISIBLE_ROWS - 1),
+      })
+    }
 
     // A streak of clean drops gives width back, the way the 3D stack games do.
     // Without it the tower only ever narrows, so a good run is punished at

@@ -12,7 +12,7 @@ export function GamePicker({
   isBot: boolean
 }) {
   return (
-    <div className="mx-auto w-full max-w-2xl flex-1 px-5 pt-6 pb-10 sm:px-6">
+    <div className="mx-auto w-full max-w-2xl min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-6 pb-10 sm:px-6">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={spring}>
         <h2 className="display text-[2rem] sm:text-[2.5rem]">Pick a game</h2>
         <p className="mt-1.5 text-[0.875rem] text-muted">

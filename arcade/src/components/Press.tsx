@@ -1,6 +1,6 @@
 import { motion } from 'motion/react'
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
-import { forwardRef, useRef } from 'react'
+import { forwardRef } from 'react'
 import { springSnap } from '../lib/motion'
 import { useSound } from '../lib/sound'
 import type { Cue } from '../lib/sound'
@@ -20,10 +20,11 @@ type PressProps = Omit<ComponentPropsWithoutRef<typeof motion.button>, 'children
    * mobile browser will swallow the second tap of a quick double-tap as a
    * zoom gesture — so hammering a pad in Recall genuinely lost presses.
    *
-   * Keyboard activation is handled explicitly on keydown rather than relying on
-   * the browser turning Enter into a click — that synthesis does not survive
-   * every combination of focus management and motion wrappers, and a board you
-   * cannot drive from the keyboard is a worse regression than a slow tap.
+   * Keyboard activation is handled on keydown. Deliberately *no* click path:
+   * routing click here as well double-fired, because a component that remounts
+   * between the pointerdown and the click (Odd One Out re-keys its tiles each
+   * level) starts the new instance with a fresh guard and ran the action twice
+   * — which auto-failed the level on the second, wrong, tile.
    */
   onPress?: (event: unknown) => void
 }
@@ -37,12 +38,10 @@ type PressProps = Omit<ComponentPropsWithoutRef<typeof motion.button>, 'children
  * makes rapid tapping in Dot Grab feel continuous.
  */
 export const Press = forwardRef<HTMLButtonElement, PressProps>(function Press(
-  { children, cue = 'tap', depth = 0.96, onPointerDown, onPress, onKeyDown, onClick, className, ...rest },
+  { children, cue = 'tap', depth = 0.96, onPointerDown, onPress, onKeyDown, className, ...rest },
   ref,
 ) {
   const sound = useSound()
-  /** When a pointer last activated this, so the trailing click can be ignored. */
-  const lastPointer = useRef(0)
 
   return (
     <motion.button
@@ -58,7 +57,6 @@ export const Press = forwardRef<HTMLButtonElement, PressProps>(function Press(
       onPointerDown={(event) => {
         // Fire on pointerdown, not click: the cue should land with the finger.
         if (cue) sound.play(cue)
-        lastPointer.current = performance.now()
         onPress?.(event)
         onPointerDown?.(event)
       }}
@@ -66,21 +64,9 @@ export const Press = forwardRef<HTMLButtonElement, PressProps>(function Press(
         if (onPress && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault()
           if (cue) sound.play(cue)
-          lastPointer.current = 0
           onPress(event)
         }
         onKeyDown?.(event)
-      }}
-      // Belt and braces for keyboard activation.
-      //
-      // Handling keydown alone is not enough: some motion wrappers consume
-      // Enter before it reaches the handler, which silently cost Salvo's
-      // placement grid its keyboard path. Accepting the click too covers that,
-      // and the timestamp guard keeps a real tap from firing twice — a pointer
-      // press is always followed by its own click a few milliseconds later.
-      onClick={(event) => {
-        if (onPress && performance.now() - lastPointer.current > 600) onPress(event)
-        onClick?.(event)
       }}
     >
       {children}
