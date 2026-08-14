@@ -22,6 +22,11 @@ export type SoloMeta = {
   rule: string
   /** Whether a bigger number is better. Time-scored games would use 'low'. */
   direction: 'high' | 'low'
+  /**
+   * The board waits for the player's first input before anything happens, so it
+   * supplies its own beat and must not get a countdown in front of its prompt.
+   */
+  selfStart?: boolean
   /** Shown after the number on the result card, e.g. "levels". */
   unit: string
 }

@@ -1,3 +1,10 @@
+/**
+ * A beat between "both ready" and "play", so a match never starts under
+ * someone's thumb. Derived from the shared `match:start` stamp, so both players
+ * count down together without anything extra crossing the wire.
+ */
+export const COUNTDOWN_MS = 3_000
+
 import type { GameId, MatchEvent, Slot } from '../../shared/protocol'
 
 /* Shell-owned event types. Everything else belongs to the active game. */

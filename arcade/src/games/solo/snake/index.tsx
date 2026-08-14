@@ -292,6 +292,7 @@ export const snakeGame: SoloModule = {
     title: 'Snake',
     rule: 'Eat the dot to grow — hit a wall or your own tail and the run is over.',
     direction: 'high',
+    selfStart: true,
     unit: 'apples',
   },
   Play: SnakePlay,

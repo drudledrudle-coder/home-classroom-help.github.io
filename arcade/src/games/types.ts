@@ -26,8 +26,10 @@ export type GameCtx = {
 export type GameClock = {
   /** Best estimate of the sequencer's clock. */
   serverNow: () => number
-  /** Milliseconds since match:start; 0 before it. */
+  /** Milliseconds of *play*; 0 during the opening countdown. */
   elapsed: () => number
+  /** Milliseconds left of the opening countdown; 0 once play has begun. */
+  countdown: () => number
   /** Milliseconds left of `durationMs`, or null for untimed games. */
   remaining: () => number | null
 }

@@ -1,13 +1,16 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../components/Button'
+import { Countdown } from '../components/Countdown'
 import { Counter } from '../components/Counter'
 import { TopBar } from '../components/TopBar'
-import { readBest, submitScore } from '../games/solo/bests'
+import { bestIn, readBest, submitScore } from '../games/solo/bests'
+import type { Window as WindowName } from '../games/solo/bests'
 import { SOLO_GAMES } from '../games/solo/registry'
 import type { SoloApi, SoloId } from '../games/solo/types'
 import { spring, springSoft } from '../lib/motion'
 import { useSound } from '../lib/sound'
+import { COUNTDOWN_MS } from '../net/shellState'
 
 /**
  * Shell for solo runs: keeps the score, owns the personal best, and shows the
@@ -21,8 +24,16 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
   const [over, setOver] = useState(false)
   /** Bumped to restart, which remounts the board with fresh internal state. */
   const [run, setRun] = useState(0)
-  const [best, setBest] = useState<number | null>(() => readBest(id))
+  const dir = module.meta.direction
+  const [best, setBest] = useState<number | null>(() => readBest(id, dir))
   const [isRecord, setIsRecord] = useState(false)
+  /** Which of today / week / all-time this run took, for the result card. */
+  const [beaten, setBeaten] = useState<WindowName[]>([])
+  const [bests, setBests] = useState<Record<WindowName, number | null>>(() => ({
+    today: bestIn(id, 'today', dir),
+    week: bestIn(id, 'week', dir),
+    all: bestIn(id, 'all', dir),
+  }))
 
   // The board calls end() from a timeout; without this guard a late timer
   // firing after the run already ended would score twice.
@@ -42,24 +53,58 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
         ended.current = true
 
         const final = scoreRef.current
-        const record = submitScore(id, final, module.meta.direction)
-        setIsRecord(record)
-        if (record) setBest(final)
-        sound.play(record ? 'win' : 'lose')
+        const took = submitScore(id, final, module.meta.direction)
+        setBeaten(took)
+        setIsRecord(took.includes('all'))
+        if (took.includes('all')) setBest(final)
+        setBests({
+          today: bestIn(id, 'today', module.meta.direction),
+          week: bestIn(id, 'week', module.meta.direction),
+          all: bestIn(id, 'all', module.meta.direction),
+        })
+        sound.play(took.includes('all') ? 'win' : 'lose')
         setOver(true)
       },
     }),
     [id, module.meta.direction, sound],
   )
 
+  // A local stand-in for the match clock. Solo has no opponent to stay in step
+  // with, so the only thing that matters is that the count restarts with the run.
+  const startedAt = useRef(Date.now())
+  const [counting, setCounting] = useState(!module.meta.selfStart)
+  const soloClock = useMemo(
+    () => ({
+      serverNow: () => Date.now(),
+      elapsed: () => Math.max(0, Date.now() - startedAt.current - COUNTDOWN_MS),
+      countdown: () => Math.max(0, startedAt.current + COUNTDOWN_MS - Date.now()),
+      remaining: () => null,
+    }),
+    [],
+  )
+
+  useEffect(() => {
+    if (!counting) return
+    let raf = 0
+    const tick = () => {
+      if (soloClock.countdown() <= 0) return setCounting(false)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [counting, soloClock, run])
+
   const again = useCallback(() => {
     ended.current = false
     scoreRef.current = 0
     setScore(0)
     setIsRecord(false)
+    setBeaten([])
     setOver(false)
     setRun((n) => n + 1)
-  }, [])
+    startedAt.current = Date.now()
+    if (!module.meta.selfStart) setCounting(true)
+  }, [module.meta.selfStart])
 
   const Play = module.Play
 
@@ -81,7 +126,16 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
       </div>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <Play key={run} api={api} />
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          style={counting ? { pointerEvents: 'none' } : undefined}
+        >
+          <Play key={run} api={api} />
+        </div>
+        {/* Solo has no shared clock, so the beat is local — but it is the same
+            component and the same three seconds as a versus match. Games that
+            wait for a first input supply their own beat and opt out. */}
+        {!module.meta.selfStart ? <Countdown clock={soloClock} /> : null}
       </div>
 
       <AnimatePresence>
@@ -89,6 +143,8 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
           <Result
             score={score}
             best={best}
+            bests={bests}
+            beaten={beaten}
             unit={module.meta.unit}
             isRecord={isRecord}
             onAgain={again}
@@ -108,9 +164,57 @@ function Title({ text }: { text: string }) {
   )
 }
 
+/**
+ * Three windows, three weights.
+ *
+ * All-time carries the accent because it is the one that is genuinely hard to
+ * take. Today is the one a player can beat on any given sitting, so it reads as
+ * live but quieter; the week sits between them. Deliberately *not* three
+ * saturated colours — the point of a minimal palette is that emphasis still
+ * means something, and red stays reserved for things that went wrong.
+ */
+const WINDOWS: Array<{ key: WindowName; label: string }> = [
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: 'This week' },
+  { key: 'all', label: 'All time' },
+]
+
+function ScoreWindow({
+  label,
+  value,
+  tone,
+  fresh,
+}: {
+  label: string
+  value: number | null
+  tone: 'today' | 'week' | 'all'
+  fresh: boolean
+}) {
+  const colour =
+    tone === 'all' ? 'var(--t-accent)' : tone === 'week' ? 'var(--t-ink)' : 'var(--t-muted)'
+  return (
+    <motion.div
+      animate={fresh ? { scale: [1, 1.06, 1] } : { scale: 1 }}
+      transition={springSoft}
+      className="flex flex-1 flex-col gap-1 rounded-xl px-3 py-2.5"
+      style={{
+        backgroundColor: fresh ? 'var(--t-accent-wash)' : 'var(--t-bg)',
+        border: `1px solid ${fresh ? 'var(--t-accent)' : 'var(--t-line)'}`,
+      }}
+    >
+      <span className="chrome text-muted/70">{label}</span>
+      <span className="display tnum text-[1.375rem] leading-none" style={{ color: colour }}>
+        {value ?? '—'}
+      </span>
+    </motion.div>
+  )
+}
+
 function Result({
   score,
   best,
+  bests,
+  beaten,
   unit,
   isRecord,
   onAgain,
@@ -118,6 +222,8 @@ function Result({
 }: {
   score: number
   best: number | null
+  bests: Record<WindowName, number | null>
+  beaten: WindowName[]
   unit: string
   isRecord: boolean
   onAgain: () => void
@@ -149,6 +255,16 @@ function Result({
             >
               New best
             </motion.span>
+          ) : beaten.length ? (
+            <motion.span
+              key="window"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={spring}
+              className="chrome text-accent"
+            >
+              {beaten.includes('week') ? 'Best this week' : 'Best today'}
+            </motion.span>
           ) : (
             <motion.span key="done" className="chrome text-muted">
               Run over
@@ -171,6 +287,18 @@ function Result({
             Your best is {best}. {best - score === 1 ? 'One off.' : `${best - score} away.`}
           </p>
         ) : null}
+
+        <div className="mt-4 flex gap-2">
+          {WINDOWS.map((w) => (
+            <ScoreWindow
+              key={w.key}
+              label={w.label}
+              value={bests[w.key]}
+              tone={w.key}
+              fresh={beaten.includes(w.key)}
+            />
+          ))}
+        </div>
 
         <div className="mt-6 flex flex-col gap-2.5">
           <Button full size="lg" onClick={onAgain}>

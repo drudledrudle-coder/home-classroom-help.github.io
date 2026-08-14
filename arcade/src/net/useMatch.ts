@@ -3,7 +3,7 @@ import type { GameId, PeerState, Slot } from '../../shared/protocol'
 import { OTHER, PRESENCE_TIMEOUT_MS } from '../../shared/protocol'
 import type { AnyGameModule, BaseGameState, GameClock, GameCtx } from '../games/types'
 import { makeSeed } from '../lib/random'
-import { EV_GAME, EV_READY, EV_START, EV_TIMEUP, readShellState } from './shellState'
+import { COUNTDOWN_MS, EV_GAME, EV_READY, EV_START, EV_TIMEUP, readShellState } from './shellState'
 import type { ConnState, NetStats, Transport } from './types'
 
 export type MatchApi = {
@@ -54,7 +54,17 @@ export function useMatch(transport: Transport, modules: Record<GameId, AnyGameMo
 
   const module = gameId ? modules[gameId] : null
 
-  const ctx = useMemo<GameCtx>(() => ({ seed, startedAt, slot }), [seed, startedAt, slot])
+  // `startedAt` handed to games is when *play* begins, not when the match record
+  // was stamped — the same meaning bots get. Grab's reducer judges whether a
+  // claim landed inside a dot's lifetime by subtracting this from the event
+  // time, and its view schedules those dots on `clock.elapsed()`; if the two
+  // disagreed by the countdown, every claim in the game was rejected as late.
+  // Defining it once here keeps any future game on the same clock for free.
+  const playFrom = startedAt ? startedAt + COUNTDOWN_MS : 0
+  const ctx = useMemo<GameCtx>(
+    () => ({ seed, startedAt: playFrom, slot }),
+    [seed, playFrom, slot],
+  )
 
   const state = useMemo<BaseGameState | null>(() => {
     if (!module || startIndex < 0) return null
@@ -68,10 +78,17 @@ export function useMatch(transport: Transport, modules: Record<GameId, AnyGameMo
   const clock = useMemo<GameClock>(() => {
     const duration = module?.meta.durationMs
     const serverNow = () => Date.now() + clockOffset
-    const elapsed = () => (startedAt ? Math.max(0, serverNow() - startedAt) : 0)
+    // Play time, not wall time: the countdown is not part of anyone's 30
+    // seconds, so a timed game gets its full duration once it actually begins.
+    const elapsed = () =>
+      startedAt ? Math.max(0, serverNow() - startedAt - COUNTDOWN_MS) : 0
+    /** Milliseconds left before play opens; 0 once it has. */
+    const countdown = () =>
+      startedAt ? Math.max(0, startedAt + COUNTDOWN_MS - serverNow()) : 0
     return {
       serverNow,
       elapsed,
+      countdown,
       remaining: () => (duration == null ? null : Math.max(0, duration - elapsed())),
     }
   }, [module, startedAt, clockOffset])
@@ -105,7 +122,7 @@ export function useMatch(transport: Transport, modules: Record<GameId, AnyGameMo
       timeupSent.current = startedAt
       transport.push(EV_TIMEUP)
     }
-    const left = duration - (Date.now() + clockOffset - startedAt)
+    const left = duration - Math.max(0, Date.now() + clockOffset - startedAt - COUNTDOWN_MS)
     if (left <= 0) {
       fire()
       return

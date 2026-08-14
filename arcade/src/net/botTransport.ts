@@ -1,7 +1,7 @@
 import type { GameId, MatchEvent } from '../../shared/protocol'
 import { currentDifficulty } from '../lib/difficulty'
 import type { Difficulty } from '../lib/difficulty'
-import { EV_READY, readShellState } from './shellState'
+import { COUNTDOWN_MS, EV_READY, readShellState } from './shellState'
 import type { Transport, TransportState } from './types'
 import { emptyStats } from './types'
 
@@ -131,9 +131,20 @@ export function createBotTransport(pick: (id: GameId) => BotFactory | null): Tra
 
       if (shell.startIndex < 0) return
 
+      // Sit out the countdown, then wake exactly when play opens. Without this
+      // the bot starts scoring against a board the player cannot touch yet.
+      const waitLeft = shell.startedAt + COUNTDOWN_MS - now()
+      if (waitLeft > 0) {
+        later(() => step(), waitLeft + 20)
+        return
+      }
+
       brain.react(state.events.slice(shell.startIndex + 1), api, {
         seed: shell.seed,
-        startedAt: shell.startedAt,
+        // When *play* began, not when the match record was stamped. Bots time
+        // themselves against this, so handing them the raw start would have cost
+        // Tug three seconds off a ten-second round.
+        startedAt: shell.startedAt + COUNTDOWN_MS,
         difficulty: currentDifficulty(),
       })
     } finally {

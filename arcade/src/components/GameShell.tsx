@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { OTHER } from '../../shared/protocol'
 import type { AnyGameModule } from '../games/types'
 import { spring, springScreen, springSoft } from '../lib/motion'
 import { useSound } from '../lib/sound'
 import type { MatchApi } from '../net/useMatch'
 import { Button } from './Button'
+import { Countdown } from './Countdown'
 import { Counter } from './Counter'
 import { TimerBar } from './TimerBar'
 
@@ -27,6 +28,25 @@ export function GameShell({
   const sound = useSound()
   const theirSlot = OTHER[slot]
   const opponentLabel = isBot ? 'Bot' : 'Them'
+
+  // Re-render while the count runs so the board unlocks on the same frame the
+  // overlay clears. `Countdown` animates itself; this only tracks the gate.
+  const [counting, setCounting] = useState(() => clock.countdown() > 0)
+  useEffect(() => {
+    if (!counting) return
+    let raf = 0
+    const tick = () => {
+      if (clock.countdown() <= 0) return setCounting(false)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [counting, clock])
+
+  // A rematch restarts the clock, so the gate has to close again.
+  useEffect(() => {
+    if (clock.countdown() > 0) setCounting(true)
+  }, [ctx.startedAt, clock])
 
   const over = state?.phase === 'over'
   const youWon = over && state?.winner === slot
@@ -84,10 +104,18 @@ export function GameShell({
           distribute, so tall boards start at their true top and short ones stay
           centred exactly as before. */}
       <div className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
-        <div className="flex min-h-full flex-col">
+        {/* Input is blocked for the whole count, not just visually covered: the
+            overlay does not span the score line, and a tap that lands on the
+            board a frame before "Go" would otherwise still count. */}
+        <div
+          className="flex min-h-full flex-col"
+          style={counting ? { pointerEvents: 'none' } : undefined}
+        >
           <View state={state} ctx={ctx} clock={clock} send={match.send} />
         </div>
       </div>
+
+      <Countdown clock={clock} />
 
       <AnimatePresence>
         {!opponentPresent && !over ? <DroppedOverlay onExit={onExit} /> : null}

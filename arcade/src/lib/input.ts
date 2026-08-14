@@ -2,6 +2,21 @@ import { useEffect, useRef } from 'react'
 
 export type Dir = 'up' | 'down' | 'left' | 'right'
 
+/**
+ * Global input lock, raised while a countdown is on screen.
+ *
+ * `pointer-events: none` on the board is not enough on its own: these hooks
+ * listen on the *window* so a swipe counts wherever it starts, which also means
+ * a CSS gate over the board does not stop them. Merge could be played right
+ * through its own countdown. A module-level flag is the honest fix — every
+ * entry point into game input checks the same thing.
+ */
+let locked = false
+
+export function setInputLocked(next: boolean): void {
+  locked = next
+}
+
 /** Minimum travel before a drag counts as a swipe rather than a tap. */
 /**
  * How far a finger travels before it counts as a swipe.
@@ -46,6 +61,7 @@ export function useDirectionInput(
     const start = { x: 0, y: 0, active: false, firedAt: 0 }
 
     const onDown = (event: PointerEvent) => {
+      if (locked) return
       start.x = event.clientX
       start.y = event.clientY
       start.active = true
@@ -71,7 +87,7 @@ export function useDirectionInput(
     // instinctively tries — did nothing. Re-anchoring after each turn lets a
     // single continuous drag produce left, then up, then right.
     const onMove = (event: PointerEvent) => {
-      if (!continuous || !start.active) return
+      if (locked || !continuous || !start.active) return
       const now = event.timeStamp
       if (now - start.firedAt < SWIPE_COOLDOWN_MS) return
 
@@ -83,7 +99,7 @@ export function useDirectionInput(
     }
 
     const onUp = (event: PointerEvent) => {
-      if (!start.active) return
+      if (locked || !start.active) return
       start.active = false
 
       // A flick can finish before any pointermove crosses the threshold, so the
@@ -110,7 +126,7 @@ export function useDirectionInput(
 
     const onKey = (event: KeyboardEvent) => {
       const dir = KEYS[event.code]
-      if (!dir || event.metaKey || event.ctrlKey || event.altKey) return
+      if (locked || !dir || event.metaKey || event.ctrlKey || event.altKey) return
       // Arrows scroll the page otherwise, which fights the board.
       event.preventDefault()
       handler.current(dir)
@@ -156,7 +172,7 @@ export function useGridKeys(
 
     const onKey = (event: KeyboardEvent) => {
       const step = STEP[event.code]
-      if (step === undefined || event.metaKey || event.ctrlKey || event.altKey) return
+      if (locked || step === undefined || event.metaKey || event.ctrlKey || event.altKey) return
       const host = ref.current
       if (!host) return
 
@@ -193,6 +209,7 @@ export function useKeyAction(codes: string[], action: () => void, enabled = true
   useEffect(() => {
     if (!enabled) return
     const onKey = (event: KeyboardEvent) => {
+      if (locked) return
       if (!codes.includes(event.code) || event.metaKey || event.ctrlKey || event.altKey) return
       if (event.repeat) return
       event.preventDefault()
@@ -221,11 +238,12 @@ export function useDragX(onX: (fraction: number) => void, enabled = true): void 
       handler.current(Math.max(0, Math.min(1, clientX / window.innerWidth)))
     }
     const onDown = (e: PointerEvent) => {
+      if (locked) return
       down = true
       report(e.clientX)
     }
     const onMove = (e: PointerEvent) => {
-      if (down) report(e.clientX)
+      if (!locked && down) report(e.clientX)
     }
     const onUp = () => {
       down = false

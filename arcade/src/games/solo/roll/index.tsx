@@ -272,6 +272,7 @@ export const rollGame: SoloModule = {
     title: 'Roll',
     rule: 'Steer the ball through the gaps in an endless run that keeps speeding up.',
     direction: 'high',
+    selfStart: true,
     unit: 'gates',
   },
   Play: RollPlay,
