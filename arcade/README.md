@@ -238,6 +238,49 @@ the app that has to be unmistakable at a glance while a phone is being handed ar
 Installable: there is a web manifest and a full icon set, so "add to home screen"
 gives a proper standalone app rather than a browser shortcut.
 
+### Offline
+
+A service worker precaches the shell, the entry chunk, the stylesheet and both
+fonts at build time, so the app opens cold with no network and every solo, party
+and bot game plays exactly as normal. `pwa/plugin.ts` generates the list from the
+real build output — Vite content-hashes every filename, so a hand-written list
+would go stale on the next build and precache files that no longer exist.
+
+Three decisions carry the weight:
+
+- **`/api/` is never cached, at all.** Everything the app needs to *run* is
+  hashed and immutable; everything it needs to *play against someone* is live
+  state. Serving a room from cache would resume a stale log, and serving the key
+  check from cache would hand out access the server never granted. The worker
+  does not answer for those paths, so an offline request fails and the transport
+  sees a real error instead of a stale success.
+- **`ignoreVary: true` on every lookup.** Hosts commonly answer static assets
+  with `Vary: Origin` — Netlify does, and so does `vite preview`. The worker
+  precaches them with no `Origin` header; the page then asks for the same file as
+  a module script, which is a CORS-mode request that *does* send one. Under
+  `Vary` those are different representations, so every lookup misses and an app
+  that looks perfectly precached serves nothing the moment it goes offline. This
+  cost an afternoon; it is not theoretical.
+- **The worker never takes over on its own.** Swapping the code under a running
+  match is the worst possible moment, so a new build installs, waits, and the app
+  offers the player a reload. That makes cache-first safe for the shell, which is
+  what keeps a cold launch instant.
+
+`/sw.js` and `/index.html` are served `no-cache` from `netlify.toml`. That pair
+is not optional: the worker decides every other file's lifetime, and the shell
+names the hashed assets, so a cached copy of either pins the whole app to an old
+build with no way to ship a fix.
+
+Word Sprint's dictionary is the one thing left out of the precache — it is most
+of the payload and most sessions never open it, so it is fetched on demand and
+kept from then on. It needs one online play before it works offline; nothing else
+does.
+
+Offline is visible rather than silent: a notice says so, and the two controls
+that genuinely cannot work — create a room, join by code — are disabled and
+labelled rather than hidden, since a control that vanishes reads as a broken
+build where one that explains itself reads as a temporary state.
+
 Built mobile-first and checked at nine viewports — 375/390 phone portrait, phone
 landscape, iPad mini/Air/Pro portrait, iPad landscape, 1440 laptop and 1920 desktop
 — in both themes, with no horizontal overflow, no clipped playfield and no touch
@@ -598,6 +641,7 @@ arcade/
 │   ├── room.ts      the room sequencer, backed by Netlify Blobs
 │   └── gate.ts      the key check
 ├── dev/             local stand-in for both endpoints
+├── pwa/             service worker + the build plugin that generates its manifest
 ├── scripts/         word list generator
 └── src/
     ├── net/         transports, useMatch, client-side prediction, gate client
@@ -606,7 +650,7 @@ arcade/
     │   └── party/   single-device group games
     ├── components/  design system and the shared game shell
     ├── screens/     gate, home, room, picker, ready gate, solo + party shells
-    └── lib/         theme, accent, sound, motion, pointer + swipe input, seeded RNG
+    └── lib/         theme, accent, sound, motion, pointer + swipe input, seeded RNG, PWA
 ```
 
 Fonts (Bricolage Grotesque for display, Inter for UI) are self-hosted Latin subsets

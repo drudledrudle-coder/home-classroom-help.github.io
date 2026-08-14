@@ -15,6 +15,7 @@ import { SOLO_GAMES, SOLO_ORDER } from '../games/solo/registry'
 import type { SoloId } from '../games/solo/types'
 import { spring, springSnap, stagger } from '../lib/motion'
 import { usePointerFine } from '../lib/pointer'
+import { useOnline } from '../lib/pwa'
 
 export function Home({
   onCreate,
@@ -32,6 +33,7 @@ export function Home({
   initialCode?: string
 }) {
   const [code, setCode] = useState(initialCode)
+  const online = useOnline()
 
   const join = useCallback(
     (value: string) => {
@@ -48,6 +50,10 @@ export function Home({
           the flex-1 main, which opens a dead gap between the two sections on
           any single-column screen tall enough to have slack (iPad portrait). */}
       <main className="relative z-10 mx-auto grid w-full max-w-5xl flex-1 grid-cols-1 content-start gap-11 px-5 pt-10 pb-14 sm:px-8 sm:pt-14 md:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] md:content-center md:gap-12 md:pb-20 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:gap-20">
+        {/* A room needs the server, so with no network these controls cannot do
+            anything. They are disabled and labelled rather than hidden: a
+            control that vanishes reads as a broken build, where one that says
+            why reads as a temporary state — and everything below still plays. */}
         <section>
           <SectionLabel>Two players</SectionLabel>
 
@@ -57,8 +63,8 @@ export function Home({
             transition={spring}
             className="mt-4"
           >
-            <Magnetic strength={0.16}>
-              <Button size="lg" full onClick={onCreate}>
+            <Magnetic strength={online ? 0.16 : 0}>
+              <Button size="lg" full onClick={onCreate} disabled={!online}>
                 Create a room
               </Button>
             </Magnetic>
@@ -72,9 +78,24 @@ export function Home({
           >
             <SectionLabel>Have a code</SectionLabel>
             <div className="mt-3.5">
-              <CodeInput value={code} onChange={setCode} onComplete={join} />
+              <CodeInput value={code} onChange={setCode} onComplete={join} disabled={!online} />
             </div>
           </motion.div>
+
+          <AnimatePresence>
+            {!online ? (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={springSnap}
+                className="mt-4 text-[0.8125rem] text-muted"
+              >
+                Rooms need a connection. Everything on the right plays offline —
+                the bot included.
+              </motion.p>
+            ) : null}
+          </AnimatePresence>
         </section>
 
         <section className="lg:pt-0">

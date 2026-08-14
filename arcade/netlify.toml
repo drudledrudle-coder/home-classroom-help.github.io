@@ -34,3 +34,18 @@
   for = "/api/*"
   [headers.values]
     Cache-Control = "no-store"
+
+# The service worker must never be served from a cache. It is the thing that
+# decides what every other file's cache lifetime is, so a stale copy pins the
+# whole app to an old build with no way to ship a fix.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# Same reasoning: the shell names the hashed assets, so a cached copy would keep
+# pointing at the previous build's files.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

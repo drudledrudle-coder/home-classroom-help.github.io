@@ -2,9 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { devRoomServer } from './dev/devRoomServer.ts'
+import { pwaServiceWorker } from './pwa/plugin.ts'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), devRoomServer()],
+  plugins: [react(), tailwindcss(), devRoomServer(), pwaServiceWorker()],
   build: {
     target: 'es2022',
     // The word list is pulled in via dynamic import, so Rollup already splits it
