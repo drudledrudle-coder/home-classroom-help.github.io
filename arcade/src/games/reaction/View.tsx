@@ -75,17 +75,39 @@ export function ReactionView({ state, ctx, send }: GameViewProps<ReactionState>)
     }
   }, [round, over, seed, slot, send, sound])
 
-  const onTap = useCallback(() => {
-    if (over || latest.current.taps[slot]) return
+  /**
+   * One answer per round, decided synchronously.
+   *
+   * `phase` and the log are both state, so two events in the same frame — a
+   * pointerdown and a key, say — could each see a round that had not been
+   * answered yet and both send a tap.
+   */
+  const answered = useRef(false)
+  useEffect(() => {
+    answered.current = false
+  }, [round])
 
-    if (phase === 'arming' || phase === 'result') {
+  const onTap = useCallback(() => {
+    if (over || answered.current || latest.current.taps[slot]) return
+
+    // The beat between rounds, showing the last one's times. The next round has
+    // not started, so a tap here is not early — it is not in a round at all.
+    // Fouling it punished ordinary impatience, ended the round on the spot, and
+    // sent an event nobody was waiting for.
+    if (phase === 'result' || phase === 'done') return
+
+    if (phase === 'arming') {
+      answered.current = true
       send(EV_TAP, { ms: 0, foul: true })
       setPhase('done')
       sound.play('foul')
       return
     }
     if (phase === 'go') {
-      send(EV_TAP, { ms: Math.round(performance.now() - flipAt.current), foul: false })
+      // Read the clock before anything else in this handler can delay it.
+      const ms = Math.round(performance.now() - flipAt.current)
+      answered.current = true
+      send(EV_TAP, { ms, foul: false })
       setPhase('done')
       sound.play('confirm')
     }
@@ -106,7 +128,12 @@ export function ReactionView({ state, ctx, send }: GameViewProps<ReactionState>)
       <Press
         cue={null}
         depth={0.985}
-        onClick={onTap}
+        // Pointer *down*, not click. A click fires on release, so the game was
+        // timing when the finger came off the glass rather than when it landed —
+        // in a game whose entire subject is that interval. Safe to double up
+        // with the key handler because `answered` resolves the round on the
+        // first of the two synchronously.
+        onPress={onTap}
         disabled={over}
         aria-label={phase === 'go' ? 'Tap now' : 'Wait for the colour change, then tap'}
         className="no-select relative mt-4 flex flex-1 items-center justify-center overflow-hidden rounded-3xl border"

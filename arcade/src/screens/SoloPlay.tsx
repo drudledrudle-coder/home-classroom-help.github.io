@@ -134,7 +134,7 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
           className="flex min-h-0 flex-1 flex-col"
           style={counting ? { pointerEvents: 'none' } : undefined}
         >
-          <Play key={run} api={api} />
+          <Play key={run} api={api} ready={!counting} />
         </div>
         {/* Solo has no shared clock, so the beat is local — but it is the same
             component and the same three seconds as a versus match. Games that

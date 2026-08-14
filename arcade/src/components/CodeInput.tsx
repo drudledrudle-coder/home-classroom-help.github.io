@@ -33,13 +33,13 @@ export function CodeInput({
   const cells = Array.from({ length: CODE_LENGTH }, (_, i) => value[i] ?? '')
 
   return (
-    <div
-      className="relative"
-      onPointerDown={(e) => {
-        e.preventDefault()
-        inputRef.current?.focus()
-      }}
-    >
+    // No pointer handling of its own. The input already covers this box, so a
+    // tap lands on the real field and focuses it natively — which is the only
+    // thing iOS Safari reliably opens a keyboard for. The previous version
+    // intercepted pointerdown, called `preventDefault` and focused by hand,
+    // which is exactly the sequence that stops the native focus happening at
+    // all: on some devices the boxes simply could not be typed into.
+    <div className="relative">
       <input
         ref={inputRef}
         value={value}
@@ -62,8 +62,12 @@ export function CodeInput({
         autoComplete="off"
         spellCheck={false}
         aria-label="Room code, four letters"
-        // Visually hidden but still the focused, typable element.
-        className="absolute inset-0 h-full w-full opacity-0"
+        // Invisible, but the real target: it covers the boxes and sits above
+        // them, so every tap anywhere on the control hits it. `text-[16px]` is
+        // not cosmetic — iOS zooms the whole page when focusing an input under
+        // 16px, and the caret is hidden because the boxes draw their own.
+        className="absolute inset-0 z-10 h-full w-full cursor-text bg-transparent text-[16px] text-transparent caret-transparent opacity-0"
+        style={{ touchAction: 'manipulation' }}
       />
 
       <div className="flex justify-center gap-2 sm:gap-2.5">

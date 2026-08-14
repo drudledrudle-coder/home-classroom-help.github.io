@@ -237,10 +237,42 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     })
   }, [audio])
 
+  /**
+   * Keep the context alive.
+   *
+   * Browsers suspend an AudioContext when the tab is backgrounded, when the
+   * phone locks, and — on iOS especially — after a stretch with nothing
+   * playing. Nothing resumes it on its own, so the app simply goes quiet after a
+   * while and never recovers, which is precisely what it did. Every visibility
+   * change and every gesture is treated as a chance to revive it; a gesture in
+   * particular is the only thing iOS will honour.
+   *
+   * Deliberately no `close()` on unmount. The context is meant to live as long
+   * as the page, and closing it is terminal — a closed context can never be
+   * resumed, so the one thing that cleanup could achieve is permanent silence.
+   */
   useEffect(() => {
+    const revive = () => {
+      const ac = ctxRef.current
+      if (ac && ac.state === 'suspended') void ac.resume()
+    }
+    const onVisible = () => {
+      if (!document.hidden) revive()
+    }
+
+    document.addEventListener('visibilitychange', onVisible)
+    // Capture and passive: this must never be able to interfere with a game's
+    // own handling of the same event.
+    const opts = { capture: true, passive: true } as const
+    window.addEventListener('pointerdown', revive, opts)
+    window.addEventListener('keydown', revive, opts)
+    window.addEventListener('focus', revive)
+
     return () => {
-      void ctxRef.current?.close()
-      ctxRef.current = null
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pointerdown', revive, opts)
+      window.removeEventListener('keydown', revive, opts)
+      window.removeEventListener('focus', revive)
     }
   }, [])
 

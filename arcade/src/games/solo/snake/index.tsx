@@ -20,7 +20,26 @@ const THICKNESS = 0.74
  */
 const CORNER_R = 0.46
 
+/**
+ * How far into a tick a turn may arrive and still be taken *now* rather than
+ * next time.
+ *
+ * The grid is the honest model but it is not what the player thinks they are
+ * doing: they swipe, and they expect the snake to turn. Past this point in the
+ * tick the remaining wait is long enough to read as a dropped input, so the
+ * pending step is simply brought forward. It costs nothing — the tick was about
+ * to happen anyway — and it is the single biggest reason the controls feel
+ * tight rather than laggy.
+ */
+const LATE_TURN = 0.55
+
+/** Degrees the head sweeps per millisecond. 90° in about 70ms: read as instant. */
+const TURN_RATE = 90 / 70
+
 type Cell = { x: number; y: number }
+
+/** Head glyph points along +x at zero, so these are clockwise from east. */
+const ANGLE: Record<Dir, number> = { right: 0, down: 90, left: 180, up: 270 }
 
 const DELTA: Record<Dir, Cell> = {
   up: { x: 0, y: -1 },
@@ -107,9 +126,10 @@ function SnakePlay({ api }: { api: SoloApi }) {
   const [apple, setApple] = useState<Cell>({ x: 6, y: 3 })
   const [started, setStarted] = useState(false)
   const [length, setLength] = useState(3)
+  const [burst, setBurst] = useState<{ n: number; x: number; y: number } | null>(null)
 
   const pathRef = useRef<SVGPathElement>(null)
-  const headRef = useRef<SVGCircleElement>(null)
+  const headRef = useRef<SVGGElement>(null)
 
   const body = useRef<Cell[]>([
     { x: 6, y: 7 },
@@ -124,26 +144,62 @@ function SnakePlay({ api }: { api: SoloApi }) {
   const eaten = useRef(0)
   const dead = useRef(false)
 
-  const turn = useCallback((dir: Dir) => {
-    if (dead.current) return
-    setStarted(true)
-    const last = queued.current[queued.current.length - 1] ?? heading.current
-    // Reversing into yourself is instant death, so it is treated as a misinput.
-    if (dir === OPPOSITE[last] || dir === last) return
-    if (queued.current.length < 2) queued.current.push(dir)
-  }, [])
+  /**
+   * Where the head is *pointing*, which runs ahead of where the body is moving.
+   *
+   * The simulation can only turn on a tick, but the player turned when they
+   * swiped. Pointing the head immediately gives the input somewhere to land on
+   * the very next frame, so the grid underneath stops being the thing you feel.
+   */
+  const facing = useRef<Dir>('up')
+  const angle = useRef(ANGLE.up)
+
+  // Lets a turn pull the pending step forward; assigned by the simulation.
+  const stepRef = useRef<() => void>(() => {})
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const turn = useCallback(
+    (dir: Dir) => {
+      if (dead.current) return
+      setStarted(true)
+      const last = queued.current[queued.current.length - 1] ?? heading.current
+      // Reversing into yourself is instant death, so it is treated as a misinput.
+      if (dir === OPPOSITE[last] || dir === last) return
+      if (queued.current.length >= 2) return
+
+      queued.current.push(dir)
+      // Answer on this frame: the head swings and a cue fires, both well before
+      // the tick that actually moves anything.
+      facing.current = dir
+      sound.play('tick')
+
+      // Late in the tick, take the step now rather than making them wait out a
+      // gap they will read as the swipe being ignored.
+      if (
+        queued.current.length === 1 &&
+        performance.now() - tickAt.current >= tickMs.current * LATE_TURN
+      ) {
+        if (timerRef.current) clearTimeout(timerRef.current)
+        stepRef.current()
+      }
+    },
+    [sound],
+  )
 
   useDirectionInput(turn, true, true)
 
   /* -- simulation ---------------------------------------------------------- */
   useEffect(() => {
     if (!started || dead.current) return
-    let timer: ReturnType<typeof setTimeout>
 
     const step = () => {
       const cells = body.current
       const next = queued.current.shift()
       if (next) heading.current = next
+      // Nothing queued: the head may have been pointed somewhere it never went
+      // (a reversal, or a turn that arrived after this step). Put it back on the
+      // heading so it never lies about where the snake is going.
+      else facing.current = heading.current
 
       const move = DELTA[heading.current]
       const head = { x: cells[0].x + move.x, y: cells[0].y + move.y }
@@ -167,6 +223,9 @@ function SnakePlay({ api }: { api: SoloApi }) {
         api.setScore(eaten.current)
         setLength(cells.length)
         sound.play('pop')
+        // A ring left where the apple was, so eating is felt at the point of
+        // contact rather than only read off the counter.
+        setBurst({ n: eaten.current, x: head.x + 0.5, y: head.y + 0.5 })
         setApple(placeApple(cells))
       } else {
         cells.pop()
@@ -174,19 +233,25 @@ function SnakePlay({ api }: { api: SoloApi }) {
 
       tickAt.current = performance.now()
       tickMs.current = Math.max(MIN_MS, START_MS - eaten.current * SPEEDUP_MS)
-      timer = setTimeout(step, tickMs.current)
+      timerRef.current = setTimeout(step, tickMs.current)
     }
 
+    stepRef.current = step
     tickAt.current = performance.now()
-    timer = setTimeout(step, tickMs.current)
-    return () => clearTimeout(timer)
+    timerRef.current = setTimeout(step, tickMs.current)
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
   }, [started, apple, api, sound])
 
   /* -- rendering ----------------------------------------------------------- */
   useEffect(() => {
     let raf = 0
+    let last = performance.now()
 
     const draw = (now: number) => {
+      const dt = Math.min(64, now - last)
+      last = now
       const cells = body.current
       const poly = pathRef.current
       if (poly && cells.length) {
@@ -218,8 +283,20 @@ function SnakePlay({ api }: { api: SoloApi }) {
 
         const head = headRef.current
         if (head) {
-          head.setAttribute('cx', String(cells[0].x + 0.5 + move.x * t))
-          head.setAttribute('cy', String(cells[0].y + 0.5 + move.y * t))
+          // Swing towards where the player pointed, by the shortest way round,
+          // at a rate that covers a right angle in about four frames. Started on
+          // the input rather than on the tick, which is what makes a swipe feel
+          // answered before anything has actually moved.
+          const target = ANGLE[facing.current]
+          const diff = ((target - angle.current + 540) % 360) - 180
+          const stepBy = TURN_RATE * dt
+          angle.current =
+            Math.abs(diff) <= stepBy ? target : angle.current + Math.sign(diff) * stepBy
+          angle.current = ((angle.current % 360) + 360) % 360
+
+          const hx = cells[0].x + 0.5 + move.x * t
+          const hy = cells[0].y + 0.5 + move.y * t
+          head.setAttribute('transform', `translate(${hx} ${hy}) rotate(${angle.current})`)
         }
       }
       raf = requestAnimationFrame(draw)
@@ -264,7 +341,34 @@ function SnakePlay({ api }: { api: SoloApi }) {
             strokeLinejoin="round"
             opacity={0.92}
           />
-          <circle ref={headRef} r={THICKNESS / 2} fill="var(--t-ink)" />
+          {/* The head, drawn pointing along +x and rotated into place. The eyes
+              are the whole point: they give the snake a front, so a turn is
+              legible as the animal looking where it is going rather than as a
+              rectangle changing axis. They are cut out in the board colour, so
+              they work in either theme and in every accent without tuning. */}
+          <g ref={headRef}>
+            <circle r={THICKNESS / 2} fill="var(--t-ink)" />
+            <circle cx={0.1} cy={-0.155} r={0.082} fill="var(--t-surface)" />
+            <circle cx={0.1} cy={0.155} r={0.082} fill="var(--t-surface)" />
+          </g>
+
+          {/* A ring left where an apple was taken. */}
+          {burst ? (
+            <motion.circle
+              key={burst.n}
+              cx={burst.x}
+              cy={burst.y}
+              fill="none"
+              stroke="var(--t-accent)"
+              strokeWidth={0.12}
+              initial={{ r: THICKNESS / 2, opacity: 0.9 }}
+              animate={{ r: 1.5, opacity: 0 }}
+              transition={{ duration: 0.42, ease: 'easeOut' }}
+              onAnimationComplete={() =>
+                setBurst((b) => (b && b.n === burst.n ? null : b))
+              }
+            />
+          ) : null}
         </svg>
 
         {!started ? (

@@ -345,6 +345,32 @@ function PlacementBoard({
     [placed, done, nextSize, horizontal, taken, commit, reject, sound],
   )
 
+  /**
+   * Turn a ship that is already down, in place.
+   *
+   * Rotating around the bow rather than the centre, because the bow is the cell
+   * the player put their finger on and is the one they think of the ship as
+   * occupying. If the turned ship would run off the board `shipCells` clamps it
+   * back inside; if it would land on another ship the move is refused, since
+   * silently shoving the other one aside is worse than doing nothing.
+   */
+  const rotateAt = useCallback(
+    (index: number) => {
+      const ship = placed[index]
+      if (!ship) return
+      const across = ship[1] - ship[0] === 1
+      const cells = shipCells(ship[0], ship.length, !across)
+      const others = placed.filter((_, k) => k !== index).flat()
+      if (!fits(cells, others)) {
+        reject()
+        return
+      }
+      sound.play('tick')
+      commit(placed.map((sh, k) => (k === index ? cells : sh)))
+    },
+    [placed, commit, reject, sound],
+  )
+
   const randomise = useCallback(() => {
     sound.play('pop')
     commit(regroup(makeFleet()))
@@ -437,28 +463,75 @@ function PlacementBoard({
       </div>
 
       <div className="mx-auto w-full max-w-[max(13rem,min(100%,calc(100dvh-24rem)))] short:mx-0 short:max-w-xs">
-        {/* Which ships are still in the tray. */}
-        <div className="flex items-center gap-1.5 pt-4 short:pt-0">
+        {/* The fleet. Ships still in the tray are shown flat; ones already on
+            the board get their own rotate control, so a ship can be turned
+            after it is down without lifting it and placing it again — which was
+            the only way to change your mind before. */}
+        <div className="flex items-center gap-2 pt-4 short:pt-0">
           {SHIPS.map((size, k) => {
             const down = k < placed.length
             const current = k === placed.length
-            return (
-              <motion.div
-                key={k}
-                animate={{ opacity: down ? 0.28 : 1, scale: current ? 1 : 0.94 }}
-                transition={spring}
-                className="flex gap-[3px]"
-              >
+            const pips = (
+              <span className="flex gap-[3px]">
                 {Array.from({ length: size }, (_, c) => (
                   <span
                     key={c}
                     className="block h-3 w-3 rounded-[3px]"
                     style={{
-                      backgroundColor: current ? 'var(--t-accent)' : 'var(--t-line-strong)',
+                      backgroundColor: current
+                        ? 'var(--t-accent)'
+                        : down
+                          ? 'var(--t-accent)'
+                          : 'var(--t-line-strong)',
                     }}
                   />
                 ))}
-              </motion.div>
+              </span>
+            )
+
+            if (!down) {
+              return (
+                <motion.div
+                  key={k}
+                  animate={{ opacity: 1, scale: current ? 1 : 0.94 }}
+                  transition={spring}
+                  className="flex"
+                >
+                  {pips}
+                </motion.div>
+              )
+            }
+
+            const across = placed[k][1] - placed[k][0] === 1
+            return (
+              <Press
+                key={k}
+                cue={null}
+                depth={0.9}
+                onPress={() => rotateAt(k)}
+                aria-label={`Rotate the ${size}-cell ship, currently ${across ? 'across' : 'down'}`}
+                className="flex items-center gap-1.5 rounded-lg border border-line px-2 py-1.5"
+              >
+                {pips}
+                {/* A quarter turn on the glyph itself, so the control shows the
+                    ship's current lie rather than just naming the action. */}
+                <motion.svg
+                  viewBox="0 0 12 12"
+                  animate={{ rotate: across ? 0 : 90 }}
+                  transition={spring}
+                  className="h-3 w-3 shrink-0"
+                  aria-hidden
+                >
+                  <path
+                    d="M2 6 h6 M6 3.4 L8.8 6 L6 8.6"
+                    fill="none"
+                    stroke="var(--t-muted)"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </motion.svg>
+              </Press>
             )
           })}
           <span className="chrome text-muted/60 ml-auto">

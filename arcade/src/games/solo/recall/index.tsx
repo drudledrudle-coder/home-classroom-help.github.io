@@ -12,7 +12,7 @@ const LEAD_IN_MS = 620
 
 type Phase = 'watch' | 'repeat'
 
-function RecallPlay({ api }: { api: SoloApi }) {
+function RecallPlay({ api, ready }: { api: SoloApi; ready: boolean }) {
   const sound = useSound()
   /** Rounds drive everything; the sequence is grown once per round. */
   const [roundNo, setRoundNo] = useState(1)
@@ -36,6 +36,10 @@ function RecallPlay({ api }: { api: SoloApi }) {
   // rather than chained, so a slow frame cannot drift the lights off the beat.
   useEffect(() => {
     if (dead.current) return
+    // The whole game is watch-then-repeat, so playing the sequence out behind
+    // the countdown would show the player something they cannot answer — and
+    // the first round is the one they would miss.
+    if (!ready) return
 
     sequence.current = [...sequence.current, Math.floor(Math.random() * PADS)]
     setLength(sequence.current.length)
@@ -60,7 +64,10 @@ function RecallPlay({ api }: { api: SoloApi }) {
         LEAD_IN_MS + sequence.current.length * (SHOW_MS + GAP_MS),
       ),
     )
-  }, [roundNo, clearTimers, sound])
+    // `ready` belongs here: the first run bails out during the countdown, and
+    // without it in the deps the effect would never run again and the game
+    // would simply never start.
+  }, [roundNo, ready, clearTimers, sound])
 
   const press = useCallback(
     (pad: number) => {

@@ -154,7 +154,7 @@ so the pointer half is free; the keyboard half is not, and is wired per game.
 | Four | Tap a column | 1–7, or arrows + Enter |
 | Recall | Tap a pad | 1–4 |
 | Shift, Nerve, Salvo, Odd One Out | Tap a cell | Arrows + Enter |
-| Salvo (placing) | Drag a ship into place, or tap to drop it; tap it again to lift | Arrows + Enter, R to rotate |
+| Salvo (placing) | Drag a ship into place, or tap to drop it; tap it again to lift; rotate a placed ship from its control in the tray | Arrows + Enter, R to rotate |
 | Word Sprint | Tap the letters | Type, Enter, Backspace |
 | Dot Grab, Imposter | Tap | — (spatial and physical; a keyboard adds nothing) |
 

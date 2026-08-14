@@ -33,5 +33,20 @@ export type SoloMeta = {
 
 export type SoloModule = {
   meta: SoloMeta
-  Play: ComponentType<{ api: SoloApi }>
+  Play: ComponentType<{
+    api: SoloApi
+    /**
+     * False while the opening 3-2-1 is still running.
+     *
+     * Locking input for the count is not enough on its own: a board that starts
+     * its *own* clock on mount runs that clock behind the overlay, so the player
+     * watches Recall play a sequence they cannot answer, or loses three seconds
+     * of an Odd One Out timer before they may touch anything. Any game that
+     * schedules something on a timer must wait for this; games that only react
+     * to input can ignore it, since input is already blocked.
+     *
+     * Always true for `selfStart` games, which have no count in front of them.
+     */
+    ready: boolean
+  }>
 }
