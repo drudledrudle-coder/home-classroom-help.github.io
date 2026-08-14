@@ -17,10 +17,22 @@ export function init(): TugState {
   return { phase: 'playing', scores: { host: 0, guest: 0 }, winner: null }
 }
 
+/**
+ * Rope position from the point of view of whoever has `mine` taps: -1 is fully
+ * dragged to the other side, +1 fully to theirs.
+ *
+ * Takes raw counts rather than the state so the view can pass *provisional*
+ * ones — unflushed local taps, and taps heard over the hint channel before the
+ * log caught up. The geometry is the same either way, and keeping it here means
+ * the view does no arithmetic of its own.
+ */
+export function ropeToward(mine: number, theirs: number): number {
+  return Math.max(-1, Math.min(1, (mine - theirs) / WIN_MARGIN))
+}
+
 /** -1 is fully to the guest's side, +1 fully to the host's. */
 export function ropeAt(state: TugState): number {
-  const net = state.scores.host - state.scores.guest
-  return Math.max(-1, Math.min(1, net / WIN_MARGIN))
+  return ropeToward(state.scores.host, state.scores.guest)
 }
 
 function settle(state: TugState): TugState {

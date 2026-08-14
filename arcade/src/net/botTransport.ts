@@ -166,6 +166,15 @@ export function createBotTransport(pick: (id: GameId) => BotFactory | null): Tra
       append('host', type, data)
     },
 
+    // There is no peer and no network: the bot's events are appended locally
+    // and rendered on the same frame, so there is nothing a hint could make
+    // faster. Both sides are no-ops rather than an unsupported-operation throw,
+    // because a view must be able to hint unconditionally.
+    nudge() {},
+    onNudge() {
+      return () => {}
+    },
+
     async reset() {
       timers.forEach(clearTimeout)
       timers.clear()

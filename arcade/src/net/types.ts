@@ -74,6 +74,22 @@ export interface Transport {
   subscribe(fn: (state: TransportState) => void): () => void
   /** Optimistically applies locally, then ships to the sequencer. */
   push(type: string, data?: unknown): void
+  /**
+   * An ephemeral hint straight down the peer channel — never logged, never
+   * sequenced, dropped entirely when there is no direct channel.
+   *
+   * This is the escape hatch for state that changes faster than it is worth
+   * ordering. A game that batches its events for the log (Tug ships one event
+   * per burst of taps, not one per tap) can still show the opponent every
+   * individual tap as it happens, because a hint costs nothing: no function
+   * invocation, no log entry, no round trip through the sequencer.
+   *
+   * Hints carry no authority, so a view must render them as decoration over
+   * confirmed state and never let one decide an outcome.
+   */
+  nudge(type: string, data?: unknown): void
+  /** Hints heard from the opponent. Returns an unsubscribe. */
+  onNudge(fn: (type: string, data: unknown) => void): () => void
   /** Clears the log and bumps the epoch for a rematch. */
   reset(): Promise<void>
   setTempo(tempo: Tempo): void

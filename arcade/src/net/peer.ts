@@ -28,7 +28,12 @@ const STUN: RTCIceServer[] = [
 /** Give up and stay on the server path rather than retrying for ever. */
 const CONNECT_TIMEOUT_MS = 12_000
 
-export type PeerMessage = { id: string; type: string; data?: unknown }
+/**
+ * `id` present: the fast-lane copy of a real event, which the server is also
+ * carrying and will order. Absent: an ephemeral hint that exists only on this
+ * channel — no log entry, no sequencing, no authority.
+ */
+export type PeerMessage = { id?: string; type: string; data?: unknown }
 
 export type PeerApi = {
   /** True once the channel is open and usable. */

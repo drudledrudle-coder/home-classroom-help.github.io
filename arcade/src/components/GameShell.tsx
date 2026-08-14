@@ -117,6 +117,7 @@ export function GameShell({
             clock={clock}
             settled={match.stats.provisional === 0}
             send={match.send}
+            hints={match.hints}
           />
         </div>
       </div>

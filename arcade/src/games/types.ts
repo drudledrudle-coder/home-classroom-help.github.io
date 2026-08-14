@@ -34,6 +34,21 @@ export type GameClock = {
   remaining: () => number | null
 }
 
+/**
+ * The peer-to-peer hint channel, for state that changes faster than it is worth
+ * putting in the log.
+ *
+ * Everything sent here is decoration: unordered, unacknowledged, silently
+ * dropped when there is no direct channel, and never seen by the sequencer. Use
+ * it to show what the opponent is doing between their logged events; never to
+ * decide anything, because the other phone may not have received it.
+ */
+export type GameHints = {
+  send: (type: string, data?: unknown) => void
+  /** Returns an unsubscribe. */
+  subscribe: (fn: (type: string, data: unknown) => void) => () => void
+}
+
 export type GameViewProps<S extends BaseGameState> = {
   state: S
   /**
@@ -48,6 +63,7 @@ export type GameViewProps<S extends BaseGameState> = {
   ctx: GameCtx
   clock: GameClock
   send: (type: string, data?: unknown) => void
+  hints: GameHints
 }
 
 export type GameMeta = {

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { GameId, PeerState, Slot } from '../../shared/protocol'
 import { OTHER, PRESENCE_TIMEOUT_MS } from '../../shared/protocol'
-import type { AnyGameModule, BaseGameState, GameClock, GameCtx } from '../games/types'
+import type {
+  AnyGameModule,
+  BaseGameState,
+  GameClock,
+  GameCtx,
+  GameHints,
+} from '../games/types'
 import { makeSeed } from '../lib/random'
 import { COUNTDOWN_MS, EV_GAME, EV_READY, EV_START, EV_TIMEUP, readShellState } from './shellState'
 import type { ConnState, NetStats, Transport } from './types'
@@ -21,6 +27,7 @@ export type MatchApi = {
   clock: GameClock
   state: BaseGameState | null
   send: (type: string, data?: unknown) => void
+  hints: GameHints
   selectGame: (id: GameId) => void
   markReady: () => void
   rematch: () => void
@@ -138,6 +145,17 @@ export function useMatch(transport: Transport, modules: Record<GameId, AnyGameMo
     [transport],
   )
 
+  // Stable for the life of the transport: views subscribe in an effect, and a
+  // fresh object every render would tear the subscription down and rebuild it
+  // on every frame of a fast-moving game.
+  const hints = useMemo<GameHints>(
+    () => ({
+      send: (type, data) => transport.nudge(type, data),
+      subscribe: (fn) => transport.onNudge(fn),
+    }),
+    [transport],
+  )
+
   const selectGame = useCallback(
     (id: GameId) => transport.push(EV_GAME, { gameId: id, seed: makeSeed() }),
     [transport],
@@ -173,6 +191,7 @@ export function useMatch(transport: Transport, modules: Record<GameId, AnyGameMo
     clock,
     state,
     send,
+    hints,
     selectGame,
     markReady,
     rematch,

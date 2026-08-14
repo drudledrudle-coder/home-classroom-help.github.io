@@ -345,7 +345,7 @@ games a month.
 If you want a true socket, the swap is contained: `src/net/types.ts` defines the
 `Transport` interface, and `onlineTransport.ts` and `botTransport.ts` are the two
 implementations. A Supabase Realtime version would be a third file implementing the
-same six methods, with no changes to any game.
+same interface, with no changes to any game.
 
 ### The direct fast lane
 
@@ -388,6 +388,45 @@ them. Where STUN cannot find a path (symmetric NAT, some mobile carriers) the
 session simply stays on the server path. That is acceptable precisely because
 this is a fast lane rather than the transport — but it does make the direct
 channel a "usually", not an "always".
+
+### Batching must not cost latency
+
+A fast transport buys nothing if the game holds the move before handing it over,
+and Tug spent a long time proving it. Mashing produces around ten taps a second
+per player, which is far too many to log one by one, so the view counted taps
+locally and flushed them on a free-running 160ms interval. That meant a single
+tap sat in a local counter for up to a full 160ms *before the transport was even
+asked to send it*. Every transport improvement above was measured on a game that
+then added a sixth of a second of its own.
+
+Two changes, neither of which touches the transport:
+
+- **Leading edge.** The first tap after a quiet spell is sent immediately and
+  only a sustained burst is batched, so one tap — the whole interaction in Tug —
+  never waits at all. This is the fix that works on every connection, including
+  the ones where the direct channel never forms.
+- **Hints.** `Transport.nudge` sends a message down the peer channel *only*: no
+  server copy, no log entry, no sequencing, silently dropped when there is no
+  channel. Tug hints every individual tap while still logging one batched event,
+  so the opponent's rope tracks a burst tap-for-tap at no cost to the budget.
+
+Hints carry a running *total* rather than an increment, which is what makes them
+safe on a channel that is deliberately unordered and unreliable: a dropped hint
+is corrected by the next one, a late one can never drag the rope backwards, and
+the confirmed log simply overtakes it. They are rendered as decoration over
+confirmed state and never decide anything, because the other phone may not have
+received them.
+
+Measured tap-to-opponent's-screen, same two-client setup:
+
+| | Opponent sees your tap |
+| --- | --- |
+| Batched on an interval | median 168ms |
+| Leading edge, no direct channel | median 102ms |
+| **Leading edge + hints** | **median 32ms** |
+
+The tapper's own screen renders at 28ms, so at 32ms the opponent is four
+milliseconds behind the player making the move.
 
 ### Seeing the numbers
 
@@ -490,9 +529,16 @@ result card, rematch and bot wiring are already handled.
 **One thing to watch: event volume.** The log is capped and every event is a
 function invocation's worth of payload, so a game driven by rapid input must batch.
 Tug is the worked example — mashing produces ~10 taps a second per player, so the
-view counts them locally and flushes a single `pull` event every 160ms instead of
+view counts them locally and flushes at most one `pull` event per 160ms instead of
 sending one event per tap. Anything continuous (dragging, holding, mashing) needs
 the same treatment.
+
+Batch on the *leading* edge, though, and hint the rest. A trailing-only batch adds
+its whole interval to the first input of a burst, which is the single input the
+player is most likely to be judging the game by — see "Batching must not cost
+latency" above. The shape to copy is Tug's: send the first one straight away, cap
+the rest, and mirror the in-between state with `hints.send` so the opponent sees
+every step without any of it reaching the log.
 
 **And a second: the log is fully shared.** Anything you put in an event is readable
 by the opponent's browser, so hidden information cannot live there. Salvo is the

@@ -124,7 +124,18 @@ export function createOnlineTransport(init: OnlineInit): Transport {
     }
   }
 
+  /** Listeners for ephemeral hints, which never touch the log or the state. */
+  const nudgeListeners = new Set<(type: string, data: unknown) => void>()
+
   const onPeerMessage = (msg: PeerMessage) => {
+    // No id means no server copy is coming: this is a hint, not an event. It is
+    // handed straight to whoever asked for it and deliberately never reaches
+    // `state`, so it cannot re-run a reducer or influence the outcome.
+    if (!msg.id) {
+      nudgeListeners.forEach((fn) => fn(msg.type, msg.data))
+      return
+    }
+
     const theirs: Slot = state.slot === 'host' ? 'guest' : 'host'
     // Seq is provisional and sorts after everything confirmed, the same trick
     // the local outbox uses. The server's ordering replaces it shortly.
@@ -425,6 +436,18 @@ export function createOnlineTransport(init: OnlineInit): Transport {
       }
     },
 
+    nudge(type, data) {
+      // Sent without an id and without a server copy. If there is no channel
+      // the hint is simply dropped — it is an optimisation, and the log the
+      // sequencer delivers is always the real thing.
+      peer?.send({ type, data })
+    },
+
+    onNudge(fn) {
+      nudgeListeners.add(fn)
+      return () => nudgeListeners.delete(fn)
+    },
+
     async reset() {
       outbox = []
       const { res } = await call({ op: 'reset', code: state.code, playerId: me })
@@ -481,6 +504,7 @@ export function createOnlineTransport(init: OnlineInit): Transport {
         }).catch(() => {})
       }
       listeners.clear()
+      nudgeListeners.clear()
     },
   }
 }
