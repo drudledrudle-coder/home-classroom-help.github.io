@@ -1,7 +1,18 @@
 import { scale } from '../../lib/difficulty'
 import { mulberry32 } from '../../lib/random'
 import type { BotFactory } from '../../net/botTransport'
-import { EV_READY, EV_RESULT, EV_SHOT, GRID, alreadyShot, bothReady, makeFleet, replay } from './logic'
+import {
+  EV_READY,
+  EV_RESULT,
+  EV_SHOT,
+  GRID,
+  alreadyShot,
+  bothReady,
+  makeFleet,
+  regroup,
+  replay,
+  sunkBy,
+} from './logic'
 import type { SalvoState } from './logic'
 
 /**
@@ -13,6 +24,8 @@ import type { SalvoState } from './logic'
  */
 export const salvoBot: BotFactory = () => {
   let fleet: number[] | null = null
+  /** Its own fleet split into vessels, so it knows when one has been finished. */
+  let ships: number[][] | null = null
   let pendingFor = -1
   let readySent = false
 
@@ -53,8 +66,14 @@ export const salvoBot: BotFactory = () => {
       if (state.pending && state.pending.by === 'host') {
         if (pendingFor === gameEvents.length) return
         pendingFor = gameEvents.length
-        const hit = fleet.includes(state.pending.i)
-        api.emit(EV_RESULT, { i: state.pending.i, hit }, 420 + Math.floor(rand() * 380))
+        const i = state.pending.i
+        const hit = fleet.includes(i)
+        // Report a sinking the same way a human client does, or solo play would
+        // be the one mode where finishing a ship went unremarked.
+        if (!ships) ships = regroup(fleet)
+        const struck = new Set(state.shots.host.filter((s) => s.hit).map((s) => s.i))
+        const sunk = hit ? (sunkBy(ships, struck, i) ?? undefined) : undefined
+        api.emit(EV_RESULT, { i, hit, sunk }, 420 + Math.floor(rand() * 380))
         return
       }
 

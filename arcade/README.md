@@ -24,7 +24,7 @@ so the app is never a dead end.
 | --- | --- | --- |
 | Merge | Swipe to slide every tile; equal tiles fuse into one worth double. | Points |
 | Snake | Eat the dot to grow — walls and your own tail are fatal. | Apples |
-| Stack | Tap to drop the sliding block; overhang is sliced off, clean drops give width back. | Blocks |
+| Stack | Tap to drop the sliding block; overhang is sliced off, clean drops give width back. Each block enters from the opposite wall. | Blocks |
 | Roll | Steer a ball through gaps in an endless run that keeps speeding up. | Gates |
 | Recall | Repeat a sequence of pads that grows by one each round. | Rounds |
 | Odd One Out | One square is a slightly different shade — tap it before the timer. | Levels |
@@ -154,7 +154,7 @@ so the pointer half is free; the keyboard half is not, and is wired per game.
 | Four | Tap a column | 1–7, or arrows + Enter |
 | Recall | Tap a pad | 1–4 |
 | Shift, Nerve, Salvo, Odd One Out | Tap a cell | Arrows + Enter |
-| Salvo (placing) | Tap to drop a ship, tap it again to lift | Arrows + Enter, R to rotate |
+| Salvo (placing) | Drag a ship into place, or tap to drop it; tap it again to lift | Arrows + Enter, R to rotate |
 | Word Sprint | Tap the letters | Type, Enter, Backspace |
 | Dot Grab, Imposter | Tap | — (spatial and physical; a keyboard adds nothing) |
 
@@ -191,6 +191,22 @@ the keyboard and the accessibility tree, with pointer events off so it cannot
 compete for the gesture.
 
 ## Feel
+
+### Cues
+
+Nine of them, synthesised rather than sampled, so they cost no payload and never
+need decoding. Two things do most of the work in making a couple of oscillators
+sound like an object rather than a beep: a **lowpass** takes the hard top off a
+square or triangle so it thuds instead of buzzing, and a short **noise burst**
+gives the ear the contact it expects at the front of an impact. Both are a couple
+of nodes, which is why nine cues still cost nothing.
+
+The set is deliberately narrow in range so each one is unmistakable. `tick` and
+`tap` are the quietest and shortest because they fire hundreds of times a session
+and anything with an edge becomes fatiguing within a minute; `sink` is the lowest
+thing in the app, so a ship going down cannot be confused with any other event.
+
+### Haptics
 
 Haptics ride the *same cue points as the sound*, inside `sound.play`, so a game never
 asks for one separately and the two cannot drift apart — every existing cue site got
@@ -555,6 +571,20 @@ positions never travel; the only thing added to the log is a `ready` flag per si
 which is enough for both clients to agree on when firing opens and tells neither of
 them anything about where the ships are. Firing stays shut until both flags are set,
 so a player who readies early simply waits.
+
+Announcing a **sinking** looks like it breaks the rule and does not, for a reason
+worth stating precisely: a ship only sinks once the attacker has hit *every one of
+its cells*, so naming those cells tells them nothing they did not already know.
+That is what makes it safe to put the whole vessel in the log — and the reducer
+enforces it, discarding any cell the attacker has not already scored a hit on and
+any run whose length is not a real ship size. A dishonest client's best play is
+therefore to stay silent about a sinking, which it could always do anyway.
+
+The defender needs to know which cells belong to which ship to work this out at
+all, and the fleet is stored as a bare set of occupied squares. `regroup` recovers
+the individual vessels by backtracking rather than matching greedily, because two
+ships can sit end to end in a row and a greedy pass would take the first three of
+those four cells as the long one and then fail on the rest.
 
 ---
 

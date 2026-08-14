@@ -46,6 +46,16 @@ function StackPlay({ api }: { api: SoloApi }) {
   const sliderRef = useRef<HTMLDivElement>(null)
   const pos = useRef(0)
   const dir = useRef(1)
+  /**
+   * Which wall the current block entered from.
+   *
+   * Every drop sends the next one in from the *other* side. Restarting the sweep
+   * from wherever the last block happened to be heading meant several blocks in
+   * a row could enter from the same wall, and the run settled into one timing
+   * you could hold indefinitely. Alternating forces the read to flip each time,
+   * which is what keeps a long tower interesting.
+   */
+  const fromLeft = useRef(true)
   const dead = useRef(false)
   const rowsRef = useRef(rows)
   rowsRef.current = rows
@@ -114,7 +124,7 @@ function StackPlay({ api }: { api: SoloApi }) {
     }
 
     const perfect = below.w - overlap < PERFECT_EPS
-    sound.play(perfect ? 'confirm' : 'pop')
+    sound.play(perfect ? 'perfect' : 'pop')
     // Fires on every clean landing, not just the ones that pay out width —
     // the player needs to know the timing was right the moment it happens,
     // otherwise a perfect drop is indistinguishable from a lucky one.
@@ -155,8 +165,11 @@ function StackPlay({ api }: { api: SoloApi }) {
     setRows(next)
     saveResume<Row[]>('stack', next)
     api.setScore(next.length - 1)
-    // Restart the sweep from whichever wall it was heading towards.
-    pos.current = dir.current > 0 ? 0 : WIDTH - width
+
+    // Send the next block in from the opposite wall, heading inwards.
+    fromLeft.current = !fromLeft.current
+    dir.current = fromLeft.current ? 1 : -1
+    pos.current = fromLeft.current ? 0 : WIDTH - width
   }, [api, sound])
 
   useKeyAction(['Space', 'Enter', 'ArrowDown'], drop, true)

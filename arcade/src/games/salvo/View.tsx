@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { OTHER } from '../../../shared/protocol'
 import { Button } from '../../components/Button'
 import { Press } from '../../components/Press'
@@ -12,7 +13,6 @@ import {
   EV_RESULT,
   EV_SHOT,
   GRID,
-  HITS_TO_WIN,
   SHIPS,
   alreadyShot,
   bothReady,
@@ -20,8 +20,11 @@ import {
   fits,
   loadFleet,
   makeFleet,
+  markOffSizes,
+  regroup,
   saveFleet,
   shipCells,
+  sunkBy,
 } from './logic'
 import type { SalvoState } from './logic'
 
@@ -53,7 +56,6 @@ export function SalvoView({ state, ctx, settled, send }: GameViewProps<SalvoStat
 
   const placing = !state.ready[slot]
   const waiting = state.ready[slot] && !bothReady(state)
-  const live = bothReady(state)
 
   /* -- fleet: chosen here, never transmitted -------------------------------- */
   // A stored fleet is only trusted if it still splits back into three legal
@@ -72,10 +74,14 @@ export function SalvoView({ state, ctx, settled, send }: GameViewProps<SalvoStat
     [ctx.startedAt],
   )
 
-  const myTurn = state.turn === slot && !state.pending && state.phase === 'playing' && live
+  /** Our own ships as separate vessels — what makes a sinking knowable. */
+  const ships = useMemo(() => regroup(fleet), [fleet])
+
+  const myTurn = state.turn === slot && !state.pending && state.phase === 'playing' && bothReady(state)
 
   // Answer any shot aimed at us. Only this client knows where its ships are, so
-  // only this client can say whether it was a hit.
+  // only this client can say whether it was a hit — or whether that hit was the
+  // one that finished a ship off.
   const answeredFor = useRef(-1)
   useEffect(() => {
     if (state.phase === 'over') return
@@ -89,10 +95,16 @@ export function SalvoView({ state, ctx, settled, send }: GameViewProps<SalvoStat
     if (answeredFor.current === state.pending.i) return
     answeredFor.current = state.pending.i
 
-    const hit = fleet.includes(state.pending.i)
-    const id = setTimeout(() => send(EV_RESULT, { i: state.pending!.i, hit }), 260)
+    const i = state.pending.i
+    const hit = fleet.includes(i)
+    // Naming the cells is safe: a ship only sinks once the attacker has hit
+    // every one of them, so this tells them nothing they did not already know.
+    const struck = new Set(state.shots[theirSlot].filter((s) => s.hit).map((s) => s.i))
+    const sunk = hit ? (sunkBy(ships, struck, i) ?? undefined) : undefined
+
+    const id = setTimeout(() => send(EV_RESULT, { i, hit, sunk }), 260)
     return () => clearTimeout(id)
-  }, [state, settled, slot, fleet, send])
+  }, [state, settled, slot, theirSlot, fleet, ships, send])
 
   if (placing) {
     return (
@@ -111,6 +123,7 @@ export function SalvoView({ state, ctx, settled, send }: GameViewProps<SalvoStat
       slot={slot}
       theirSlot={theirSlot}
       fleet={fleet}
+      ships={ships}
       myTurn={myTurn}
       waiting={waiting}
       send={send}
@@ -125,10 +138,26 @@ export function SalvoView({ state, ctx, settled, send }: GameViewProps<SalvoStat
 
 type Sound = ReturnType<typeof useSound>
 
+/** A drag in progress, whether it came from the tray or off the board. */
+type Drag = {
+  size: number
+  /** Index into `placed` when an existing ship is being moved, else null. */
+  from: number | null
+  /** Where the gesture began, so a press-and-release in place still lifts. */
+  origin: number
+  /** The cell the bow currently sits under. */
+  cell: number
+}
+
 /**
- * Tap a cell to drop the next ship there. There is no drag: dragging a
- * three-cell ship around a 6x6 grid with a thumb over it is fiddly, and tapping
- * gives the same result in one gesture. Tapping a placed ship picks it up again.
+ * Drag a ship into place, or tap to drop it — both do the same thing, and both
+ * work on the same surface.
+ *
+ * Dragging is the gesture people reach for and it shows the ship moving with the
+ * thumb, with a live preview that turns red where it will not fit. Tapping is
+ * faster once you know the board, and it is what the keyboard path uses, so
+ * neither is second class: a press and release on one square is simply a drag
+ * that travelled nowhere.
  */
 function PlacementBoard({
   fleet,
@@ -145,11 +174,17 @@ function PlacementBoard({
   const [placed, setPlaced] = useState<number[][]>(() => regroup(fleet))
   const [horizontal, setHorizontal] = useState(true)
   const [rejected, setRejected] = useState(false)
+  const [drag, setDrag] = useState<Drag | null>(null)
 
   const boardRef = useRef<HTMLDivElement>(null)
   useGridKeys(boardRef, GRID, true)
 
-  const taken = useMemo(() => placed.flat(), [placed])
+  // A ship being moved is treated as already off the board, so it can be
+  // dropped overlapping where it currently sits without colliding with itself.
+  const lifted = drag?.from ?? null
+  const onBoard = useMemo(() => placed.filter((_, k) => k !== lifted), [placed, lifted])
+  const taken = useMemo(() => onBoard.flat(), [onBoard])
+
   const nextSize = SHIPS[placed.length]
   const done = placed.length === SHIPS.length
 
@@ -161,34 +196,158 @@ function PlacementBoard({
     [onChange],
   )
 
-  const tap = useCallback(
+  const reject = useCallback(() => {
+    sound.play('foul')
+    setRejected(true)
+    setTimeout(() => setRejected(false), 260)
+  }, [sound])
+
+  /** Where the ship would land right now, and whether it may. */
+  const preview = drag ? shipCells(drag.cell, drag.size, horizontal) : null
+  const previewOk = preview ? fits(preview, taken) : false
+  const previewSet = useMemo(() => new Set(preview ?? []), [preview])
+
+  /* -- pointer: one gesture covers tap, drag and lift ----------------------- */
+
+  const cellAt = useCallback((clientX: number, clientY: number): number | null => {
+    const el = boardRef.current
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0 || r.height <= 0) return null
+    const col = Math.floor(((clientX - r.left) / r.width) * GRID)
+    const row = Math.floor(((clientY - r.top) / r.height) * GRID)
+    if (col < 0 || col >= GRID || row < 0 || row >= GRID) return null
+    return row * GRID + col
+  }, [])
+
+  // The gesture is tracked in a ref as well as in state. State is what the board
+  // renders from; the ref is what decides, because pointerup can reach us twice
+  // (the window listener below, plus a cancel) and both copies would read the
+  // same stale state and place the ship twice. Clearing the ref is synchronous,
+  // so the second call finds nothing to do.
+  const dragRef = useRef<Drag | null>(null)
+  const hold = useCallback((next: Drag | null) => {
+    dragRef.current = next
+    setDrag(next)
+  }, [])
+
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const i = cellAt(e.clientX, e.clientY)
+      if (i == null) return
+      const held = placed.findIndex((ship) => ship.includes(i))
+      // Nothing here and nothing left in the tray: no gesture to start.
+      if (held < 0 && done) return
+
+      if (held >= 0) {
+        // Pick it up in the orientation it is already lying in, so a move does
+        // not silently rotate it — and so the toggle reflects what you hold.
+        setHorizontal(placed[held][1] - placed[held][0] === 1)
+      }
+      // Capture keeps events coming if the finger wanders off the grid, but it
+      // throws outright when the pointer is no longer active, and an exception
+      // here would abandon the gesture before it began. The window listeners
+      // cover the same ground, so this is a bonus rather than a requirement.
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        /* tracked on the window instead */
+      }
+      hold({
+        size: held >= 0 ? placed[held].length : nextSize,
+        from: held >= 0 ? held : null,
+        origin: i,
+        cell: i,
+      })
+      sound.play('tick')
+    },
+    [cellAt, placed, done, nextSize, hold, sound],
+  )
+
+  const track = useCallback(
+    (clientX: number, clientY: number) => {
+      const current = dragRef.current
+      if (!current) return
+      const i = cellAt(clientX, clientY)
+      // Off the board: hold the last good square rather than snapping away.
+      // A tick per square crossed is what makes the drag feel notched.
+      if (i == null || i === current.cell) return
+      hold({ ...current, cell: i })
+      sound.play('tick')
+    },
+    [cellAt, hold, sound],
+  )
+
+  const finish = useCallback(() => {
+    const current = dragRef.current
+    if (!current) return
+    const { from, cell, origin, size } = current
+    hold(null)
+
+    // Pressed and released on the same square of a ship already down: lift it.
+    if (from != null && cell === origin) {
+      sound.play('tap')
+      commit(placed.filter((_, k) => k !== from))
+      return
+    }
+
+    const cells = shipCells(cell, size, horizontal)
+    if (!fits(cells, placed.filter((_, k) => k !== from).flat())) {
+      reject()
+      return
+    }
+
+    sound.play('pop')
+    // A moved ship keeps its slot, so the tray order never shuffles under you.
+    commit(from != null ? placed.map((sh, k) => (k === from ? cells : sh)) : [...placed, cells])
+  }, [placed, horizontal, hold, commit, reject, sound])
+
+  // Tracked on the window for the length of the gesture. Without this a finger
+  // that leaves the board — which is most of them, since the ship you are
+  // dragging sits under your thumb near the edge — would strand the preview
+  // with no way to drop it.
+  useEffect(() => {
+    if (!drag) return
+    const move = (e: PointerEvent) => track(e.clientX, e.clientY)
+    const cancel = () => hold(null)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', cancel)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', cancel)
+    }
+  }, [drag, track, finish, hold])
+
+  /**
+   * The keyboard path only. Real pointer activation is handled above, and
+   * routing it here as well would place two ships for one tap — a click
+   * synthesised from a keypress is the one with no pointer behind it.
+   */
+  const activate = useCallback(
     (i: number) => {
-      // Lifting: tapping any cell of a placed ship returns it to the tray.
-      const hit = placed.findIndex((ship) => ship.includes(i))
-      if (hit >= 0) {
+      const held = placed.findIndex((ship) => ship.includes(i))
+      if (held >= 0) {
         sound.play('tap')
-        commit(placed.filter((_, k) => k !== hit))
+        commit(placed.filter((_, k) => k !== held))
         return
       }
       if (done) return
-
       const cells = shipCells(i, nextSize, horizontal)
       if (!fits(cells, taken)) {
-        sound.play('foul')
-        setRejected(true)
-        setTimeout(() => setRejected(false), 260)
+        reject()
         return
       }
       sound.play('pop')
       commit([...placed, cells])
     },
-    [placed, done, nextSize, horizontal, taken, commit, sound],
+    [placed, done, nextSize, horizontal, taken, commit, reject, sound],
   )
 
   const randomise = useCallback(() => {
     sound.play('pop')
-    const flat = makeFleet()
-    commit(regroup(flat))
+    commit(regroup(makeFleet()))
   }, [commit, sound])
 
   const clear = useCallback(() => {
@@ -196,7 +355,7 @@ function PlacementBoard({
     commit([])
   }, [commit, sound])
 
-  // R rotates, which is what everyone tries on a keyboard.
+  // R rotates, which is what everyone tries on a keyboard — mid-drag included.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'KeyR' || e.metaKey || e.ctrlKey || e.altKey) return
@@ -223,31 +382,54 @@ function PlacementBoard({
           animate={rejected ? { x: [0, -6, 6, -3, 0] } : { x: 0 }}
           transition={{ duration: 0.26 }}
           className="grid gap-1.5"
-          style={{ gridTemplateColumns: `repeat(${GRID}, minmax(0, 1fr))` }}
+          style={{ gridTemplateColumns: `repeat(${GRID}, minmax(0, 1fr))`, touchAction: 'none' }}
+          onPointerDown={onPointerDown}
         >
           {Array.from({ length: GRID * GRID }, (_, i) => {
             const ship = taken.includes(i)
-            const run = placed.find((sh) => sh.includes(i))
+            const run = onBoard.find((sh) => sh.includes(i))
+            const ghost = previewSet.has(i)
+            const tone = ghost
+              ? previewOk
+                ? 'var(--t-accent)'
+                : 'var(--t-danger)'
+              : ship
+                ? 'var(--t-accent)'
+                : 'var(--t-line)'
             return (
               <Press
                 key={i}
                 cue={null}
-                depth={0.9}
+                depth={1}
                 aria-label={ship ? `Ship at ${i + 1}, tap to lift` : `Place at ${i + 1}`}
-                // Deliberately click, not onPress. Something in the motion
-                // wrapper on this particular grid swallows Enter before the
-                // keydown handler sees it, and losing keyboard placement is a
-                // worse regression than a tap's worth of delay on a surface you
-                // touch three times a game. The firing board, where speed
-                // actually matters, uses onPress.
-                onClick={() => tap(i)}
+                // Keyboard only — see `activate`. A synthesised click carries
+                // detail 0; a real one always has a pointer behind it, and that
+                // path has already been handled on pointerup.
+                onClick={(e) => {
+                  if (e.detail === 0) activate(i)
+                }}
                 className="relative grid aspect-square place-items-center overflow-hidden rounded-lg border"
                 style={{
-                  borderColor: ship ? 'var(--t-accent)' : 'var(--t-line)',
-                  backgroundColor: ship ? 'var(--t-accent)' : 'var(--t-surface)',
+                  touchAction: 'none',
+                  borderColor: tone,
+                  backgroundColor: ghost
+                    ? previewOk
+                      ? 'var(--t-accent-wash)'
+                      : 'var(--t-danger-wash)'
+                    : ship
+                      ? 'var(--t-accent)'
+                      : 'var(--t-surface)',
                 }}
               >
-                {run ? <ShipCell cells={run} index={i} /> : null}
+                {run ? <ShipCell cells={run} index={i} fill="var(--t-accent-ink)" /> : null}
+                {/* The ship riding the thumb, drawn over whatever is beneath. */}
+                {ghost && preview ? (
+                  <ShipCell
+                    cells={preview}
+                    index={i}
+                    fill={previewOk ? 'var(--t-accent)' : 'var(--t-danger)'}
+                  />
+                ) : null}
               </Press>
             )
           })}
@@ -307,7 +489,7 @@ function PlacementBoard({
         </div>
 
         <p className="pt-3 text-center text-[0.8125rem] text-muted short:hidden">
-          Tap to drop a ship, tap it again to lift it.
+          Drag a ship into place, or tap to drop it. Tap one again to lift it.
         </p>
       </div>
     </div>
@@ -320,7 +502,17 @@ function PlacementBoard({
  * spanning three squares instead of three identical stamps in a row — which is
  * what made the old solid blocks look like nothing in particular.
  */
-function ShipCell({ cells, index }: { cells: number[]; index: number }) {
+function ShipCell({
+  cells,
+  index,
+  fill,
+  opacity = 0.9,
+}: {
+  cells: number[]
+  index: number
+  fill: string
+  opacity?: number
+}) {
   const sorted = [...cells].sort((a, b) => a - b)
   const pos = sorted.indexOf(index)
   const horizontal = sorted.length > 1 && sorted[1] - sorted[0] === 1
@@ -338,66 +530,15 @@ function ShipCell({ cells, index }: { cells: number[]; index: number }) {
   return (
     <svg
       viewBox="0 0 10 10"
-      className="absolute inset-0 h-full w-full"
+      className="pointer-events-none absolute inset-0 h-full w-full"
       style={{ transform: horizontal ? 'rotate(-90deg)' : undefined }}
       aria-hidden
     >
-      <path d={d} fill="var(--t-accent-ink)" opacity="0.9" />
+      <path d={d} fill={fill} opacity={opacity} />
       {/* A single porthole marks the middle cells, so length is countable. */}
-      {!bow && !stern ? (
-        <circle cx="5" cy="5" r="1.1" fill="var(--t-accent)" opacity="0.75" />
-      ) : null}
+      {!bow && !stern ? <circle cx="5" cy="5" r="1.1" fill={fill} opacity={0.45} /> : null}
     </svg>
   )
-}
-
-/** Every in-bounds straight run of `size` starting at `start`. */
-function runsAt(start: number, size: number): number[][] {
-  const x = start % GRID
-  const y = Math.floor(start / GRID)
-  const out: number[][] = []
-
-  if (x + size <= GRID) {
-    out.push(Array.from({ length: size }, (_, k) => start + k))
-  }
-  if (y + size <= GRID) {
-    out.push(Array.from({ length: size }, (_, k) => start + k * GRID))
-  }
-  return out
-}
-
-/**
- * Split a flat fleet back into its ships, so one can be lifted without
- * disturbing the others — needed after a refresh and after Random, where all we
- * have is the set of occupied cells.
- *
- * This backtracks rather than matching greedily. Two ships can sit end to end in
- * the same row, and a greedy pass would take the first three of those four cells
- * as the long ship and then fail to place the rest — leaving the board full but
- * the tray non-empty, which is unrecoverable from the UI. The space is three
- * ships over 36 cells, so an exhaustive search is instant and always right.
- */
-function regroup(flat: number[]): number[][] {
-  const remaining = new Set(flat)
-  if (remaining.size !== HITS_TO_WIN) return []
-
-  const solve = (index: number, pool: Set<number>): number[][] | null => {
-    if (index === SHIPS.length) return pool.size === 0 ? [] : null
-
-    const size = SHIPS[index]
-    for (const start of [...pool].sort((a, b) => a - b)) {
-      for (const run of runsAt(start, size)) {
-        if (!run.every((c) => pool.has(c))) continue
-        const next = new Set(pool)
-        run.forEach((c) => next.delete(c))
-        const rest = solve(index + 1, next)
-        if (rest) return [run, ...rest]
-      }
-    }
-    return null
-  }
-
-  return solve(0, remaining) ?? []
 }
 
 /**
@@ -439,6 +580,62 @@ function Blast({ id }: { id: number }) {
   )
 }
 
+/**
+ * A ship going down, cell by cell along its length.
+ *
+ * Where `Blast` is a single square coming apart, this has to read as one *object*
+ * being destroyed — so the flash runs down the hull from bow to stern rather than
+ * firing everywhere at once, and each cell drops as it goes. Staggering it is the
+ * whole trick: simultaneous flashes look like three separate hits, which is
+ * exactly the thing the animation exists to distinguish itself from.
+ */
+function SinkFlash({ id, step }: { id: number; step: number }) {
+  return (
+    <motion.span
+      key={id}
+      className="pointer-events-none absolute inset-0 rounded-lg"
+      initial={{ opacity: 0, scale: 0.7 }}
+      animate={{ opacity: [0, 1, 0], scale: [0.7, 1.25, 1] }}
+      transition={{ duration: 0.5, delay: step * 0.07, ease: 'easeOut' }}
+      style={{ backgroundColor: 'var(--t-accent)' }}
+      aria-hidden
+    />
+  )
+}
+
+/** Three ship glyphs, struck through as each goes down. */
+function FleetPips({
+  down,
+  alive,
+  gone,
+}: {
+  down: boolean[]
+  alive: string
+  gone: string
+}) {
+  return (
+    <span className="flex items-center gap-1.5" aria-hidden>
+      {SHIPS.map((size, k) => (
+        <motion.span
+          key={k}
+          className="flex gap-[2px]"
+          animate={{ opacity: down[k] ? 0.55 : 1 }}
+          transition={spring}
+        >
+          {Array.from({ length: size }, (_, c) => (
+            <motion.span
+              key={c}
+              className="block h-[5px] w-[5px] rounded-[1px]"
+              animate={{ backgroundColor: down[k] ? gone : alive }}
+              transition={spring}
+            />
+          ))}
+        </motion.span>
+      ))}
+    </span>
+  )
+}
+
 /* -------------------------------------------------------------------------- */
 /* Firing                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -448,6 +645,7 @@ function FiringBoard({
   slot,
   theirSlot,
   fleet,
+  ships,
   myTurn,
   waiting,
   send,
@@ -457,6 +655,7 @@ function FiringBoard({
   slot: 'host' | 'guest'
   theirSlot: 'host' | 'guest'
   fleet: number[]
+  ships: number[][]
   myTurn: boolean
   waiting: boolean
   send: (type: string, data?: unknown) => void
@@ -467,19 +666,93 @@ function FiringBoard({
 
   const myShots = state.shots[slot]
   const theirShots = state.shots[theirSlot]
-  const myHits = myShots.filter((s) => s.hit).length
 
-  // Blast only on the frame a hit is *added*, never on every re-render.
-  const [blast, setBlast] = useState<{ i: number; n: number } | null>(null)
-  const seenHits = useRef(0)
-  useEffect(() => {
-    const hits = myShots.filter((s) => s.hit)
-    if (hits.length > seenHits.current) {
-      const last = hits[hits.length - 1]
-      setBlast({ i: last.i, n: hits.length })
-    }
-    seenHits.current = hits.length
+  /* -- what has gone down, on both boards ----------------------------------- */
+
+  // Their ships I have sunk: each sunk cell mapped to the vessel it belonged to,
+  // so a wreck can be drawn as one hull rather than as loose hit markers.
+  const wrecks = useMemo(() => {
+    const out = new Map<number, { cells: number[]; step: number; id: number }>()
+    myShots.forEach((m, order) => {
+      if (!m.sunk) return
+      m.sunk.forEach((c, step) => out.set(c, { cells: m.sunk!, step, id: order }))
+    })
+    return out
   }, [myShots])
+
+  const sunkSizes = useMemo(
+    () => myShots.flatMap((m) => (m.sunk ? [m.sunk.length] : [])),
+    [myShots],
+  )
+
+  // My own losses. I know my fleet, so this needs nothing extra over the wire.
+  const struckOnMe = useMemo(
+    () => new Set(theirShots.filter((s) => s.hit).map((s) => s.i)),
+    [theirShots],
+  )
+  const lostShips = useMemo(
+    () => ships.filter((sh) => sh.every((c) => struckOnMe.has(c))),
+    [ships, struckOnMe],
+  )
+  const lostCells = useMemo(() => new Set(lostShips.flat()), [lostShips])
+
+  /* -- announcements -------------------------------------------------------- */
+
+  const [blast, setBlast] = useState<{ i: number; n: number } | null>(null)
+  const [note, setNote] = useState<{ n: number; text: string; mine: boolean } | null>(null)
+  const noteId = useRef(0)
+
+  const announce = useCallback((text: string, mine: boolean) => {
+    setNote({ n: noteId.current++, text, mine })
+  }, [])
+
+  // Cue and flourish on the frame a result *lands*, never on a re-render. Both
+  // counters start from whatever is already in the log, so rejoining a match in
+  // progress does not replay every sinking that happened while we were away.
+  const seenMine = useRef<number | null>(null)
+  useEffect(() => {
+    const n = myShots.length
+    if (seenMine.current === null) {
+      seenMine.current = n
+      return
+    }
+    if (n > seenMine.current) {
+      const last = myShots[n - 1]
+      if (last.hit) setBlast({ i: last.i, n })
+      if (last.sunk) {
+        sound.play('sink')
+        announce(`Sunk their ${last.sunk.length}`, true)
+      } else {
+        sound.play(last.hit ? 'pop' : 'tick')
+      }
+    }
+    seenMine.current = n
+  }, [myShots, sound, announce])
+
+  const seenTheirs = useRef<number | null>(null)
+  useEffect(() => {
+    const n = theirShots.length
+    if (seenTheirs.current === null) {
+      seenTheirs.current = n
+      return
+    }
+    if (n > seenTheirs.current) {
+      const last = theirShots[n - 1]
+      if (last.sunk) {
+        sound.play('sink')
+        announce(`They sank your ${last.sunk.length}`, false)
+      }
+    }
+    seenTheirs.current = n
+  }, [theirShots, sound, announce])
+
+  // The banner is a moment, not a state — clear it on a timer rather than
+  // leaving the last sinking pinned over the board for the rest of the game.
+  useEffect(() => {
+    if (!note) return
+    const id = setTimeout(() => setNote((cur) => (cur && cur.n === note.n ? null : cur)), 1_900)
+    return () => clearTimeout(id)
+  }, [note])
 
   // The cell we have just fired at, held until the answer lands. Without it the
   // board sits inert for the half-second the defender takes to reply and the tap
@@ -498,13 +771,45 @@ function FiringBoard({
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-3 sm:px-6">
-      <div className="mx-auto w-full" style={{ maxWidth: BOARD_CAP }}>
+      <div className="relative mx-auto w-full" style={{ maxWidth: BOARD_CAP }}>
+        {/* A sinking is the one event in Salvo worth stopping to read, so it is
+            said in words as well as drawn — a hit and a kill otherwise look the
+            same at a glance on a board this small. */}
+        <AnimatePresence>
+          {note ? (
+            <motion.div
+              key={note.n}
+              initial={{ opacity: 0, y: -10, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.97 }}
+              transition={springSoft}
+              className="pointer-events-none absolute inset-x-0 top-8 z-10 flex justify-center"
+              role="status"
+            >
+              <span
+                className="chrome rounded-full border px-3.5 py-1.5"
+                style={{
+                  color: note.mine ? 'var(--t-accent-ink)' : 'var(--t-danger-ink)',
+                  backgroundColor: note.mine ? 'var(--t-accent)' : 'var(--t-danger)',
+                  borderColor: note.mine ? 'var(--t-accent)' : 'var(--t-danger)',
+                }}
+              >
+                {note.text}
+              </span>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         <div className="flex items-baseline justify-between pb-2">
-          <span className="chrome text-muted">Their waters</span>
-          <span
-            className="chrome"
-            style={{ color: myTurn ? 'var(--t-accent)' : 'var(--t-muted)' }}
-          >
+          <span className="flex items-center gap-2">
+            <span className="chrome text-muted">Their waters</span>
+            <FleetPips
+              down={markOffSizes(sunkSizes)}
+              alive="var(--t-line-strong)"
+              gone="var(--t-accent)"
+            />
+          </span>
+          <span className="chrome" style={{ color: myTurn ? 'var(--t-accent)' : 'var(--t-muted)' }}>
             {status}
           </span>
         </div>
@@ -517,6 +822,7 @@ function FiringBoard({
         >
           {Array.from({ length: GRID * GRID }, (_, i) => {
             const mark = myShots.find((s) => s.i === i)
+            const wreck = wrecks.get(i)
             const pendingHere = inFlight === i
             const playable = myTurn && !alreadyShot(state, slot, i)
             return (
@@ -526,21 +832,29 @@ function FiringBoard({
                 depth={playable ? 0.9 : 1}
                 disabled={!playable}
                 aria-label={
-                  mark ? (mark.hit ? `Hit at ${i + 1}` : `Miss at ${i + 1}`) : `Fire at ${i + 1}`
+                  wreck
+                    ? `Sunk ship at ${i + 1}`
+                    : mark
+                      ? mark.hit
+                        ? `Hit at ${i + 1}`
+                        : `Miss at ${i + 1}`
+                      : `Fire at ${i + 1}`
                 }
                 onPress={() => {
                   if (!playable) return
                   sound.play('tap')
                   send(EV_SHOT, { i })
                 }}
-                className="relative grid aspect-square place-items-center rounded-lg border disabled:pointer-events-none"
+                className="relative grid aspect-square place-items-center overflow-hidden rounded-lg border disabled:pointer-events-none"
                 style={{
-                  borderColor: mark?.hit
+                  borderColor: mark?.hit || pendingHere ? 'var(--t-accent)' : 'var(--t-line)',
+                  // A sunk ship fills solid where a live hit is only washed, so
+                  // a finished vessel reads as one dark shape across its cells.
+                  backgroundColor: wreck
                     ? 'var(--t-accent)'
-                    : pendingHere
-                      ? 'var(--t-accent)'
-                      : 'var(--t-line)',
-                  backgroundColor: mark?.hit ? 'var(--t-accent-wash)' : 'var(--t-surface)',
+                    : mark?.hit
+                      ? 'var(--t-accent-wash)'
+                      : 'var(--t-surface)',
                 }}
               >
                 {/* In-flight: a pulse where the shot is going, replaced the
@@ -556,9 +870,19 @@ function FiringBoard({
                 ) : null}
 
                 {blast && blast.i === i ? <Blast key={blast.n} id={blast.n} /> : null}
+                {wreck ? <SinkFlash id={wreck.id} step={wreck.step} /> : null}
 
                 <AnimatePresence>
-                  {mark ? (
+                  {wreck ? (
+                    // The wreck itself: the hull, drawn across the cells it
+                    // occupied, so what you destroyed is visible as a ship.
+                    <ShipCell
+                      cells={wreck.cells}
+                      index={i}
+                      fill="var(--t-accent-ink)"
+                      opacity={0.85}
+                    />
+                  ) : mark ? (
                     <motion.span
                       initial={{ scale: 0.3, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
@@ -578,9 +902,13 @@ function FiringBoard({
         </div>
 
         <div className="mt-1 flex items-baseline justify-between pt-4 pb-2">
-          <span className="chrome text-muted">Your fleet</span>
-          <span className="chrome tnum text-muted/70">
-            {myHits} / {HITS_TO_WIN} sunk
+          <span className="flex items-center gap-2">
+            <span className="chrome text-muted">Your fleet</span>
+            <FleetPips
+              down={markOffSizes(lostShips.map((sh) => sh.length))}
+              alive="var(--t-ink)"
+              gone="var(--t-danger)"
+            />
           </span>
         </div>
 
@@ -592,6 +920,7 @@ function FiringBoard({
           {Array.from({ length: GRID * GRID }, (_, i) => {
             const ship = fleet.includes(i)
             const incoming = theirShots.find((s) => s.i === i)
+            const lost = lostCells.has(i)
             return (
               <motion.span
                 key={i}
@@ -608,13 +937,15 @@ function FiringBoard({
                 className="relative aspect-square rounded-[3px]"
               >
                 {/* A struck ship of yours is a loss, so it reads red rather
-                    than in whatever accent happens to be set. */}
+                    than in whatever accent happens to be set — and once the
+                    whole vessel is gone the cell fills, so a sinking is legible
+                    here too rather than only in the banner. */}
                 {incoming?.hit ? (
                   <motion.span
                     initial={{ scale: 0.4, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={springSnap}
-                    className="absolute inset-[26%] rounded-[1px]"
+                    className={`absolute rounded-[1px] ${lost ? 'inset-[14%]' : 'inset-[26%]'}`}
                     style={{ backgroundColor: 'var(--t-danger-ink)' }}
                   />
                 ) : null}

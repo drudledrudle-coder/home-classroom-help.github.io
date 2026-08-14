@@ -26,6 +26,12 @@ const PATTERNS: Record<Cue, number | number[]> = {
   tick: 5,
   pop: 12,
   confirm: [10, 26, 16],
+  // Light and quick: this marks precision, so it should feel like a click rather
+  // than a reward buzz.
+  perfect: [8, 18, 14],
+  // The heaviest pattern in the set, matching the lowest sound — a ship going
+  // down is the one moment in Salvo worth feeling through the case.
+  sink: [26, 40, 60],
   win: [16, 38, 16, 38, 28],
   lose: [28, 55, 40],
   foul: [36, 28, 36],
