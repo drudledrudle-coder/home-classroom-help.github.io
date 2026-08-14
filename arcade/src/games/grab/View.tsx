@@ -82,7 +82,7 @@ export function GrabView({ state, ctx, clock, send }: GameViewProps<GrabState>) 
                   depth={0.82}
                   disabled={!!claim || state.phase === 'over'}
                   aria-label="Claim dot"
-                  onClick={() => {
+                  onPress={() => {
                     if (claimedRef.current[dot.id]) return
                     sound.play('pop')
                     send(EV_CLAIM, { id: dot.id })

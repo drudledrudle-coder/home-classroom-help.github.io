@@ -129,7 +129,7 @@ function RecallPlay({ api }: { api: SoloApi }) {
             depth={phase === 'repeat' ? 0.95 : 1}
             disabled={phase !== 'repeat'}
             aria-label={`Pad ${i + 1}`}
-            onClick={() => press(i)}
+            onPress={() => press(i)}
             className="rounded-2xl border disabled:pointer-events-none"
             style={{
               borderColor: lit === i ? 'var(--t-accent)' : 'var(--t-line)',

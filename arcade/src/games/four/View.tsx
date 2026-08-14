@@ -104,7 +104,7 @@ export function FourView({ state, ctx, send }: GameViewProps<FourState>) {
               depth={playable ? 0.96 : 1}
               disabled={!playable}
               aria-label={`Column ${col + 1}`}
-              onClick={() => drop(col)}
+              onPress={() => drop(col)}
               className="flex flex-col gap-1 rounded-lg disabled:pointer-events-none sm:gap-1.5"
             >
               {Array.from({ length: ROWS }, (_, row) => {

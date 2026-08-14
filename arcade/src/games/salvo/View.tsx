@@ -227,6 +227,12 @@ function PlacementBoard({
                 cue={null}
                 depth={0.9}
                 aria-label={ship ? `Ship at ${i + 1}, tap to lift` : `Place at ${i + 1}`}
+                // Deliberately click, not onPress. Something in the motion
+                // wrapper on this particular grid swallows Enter before the
+                // keydown handler sees it, and losing keyboard placement is a
+                // worse regression than a tap's worth of delay on a surface you
+                // touch three times a game. The firing board, where speed
+                // actually matters, uses onPress.
                 onClick={() => tap(i)}
                 className="relative grid aspect-square place-items-center rounded-lg border"
                 style={{
@@ -425,7 +431,7 @@ function FiringBoard({
                 aria-label={
                   mark ? (mark.hit ? `Hit at ${i + 1}` : `Miss at ${i + 1}`) : `Fire at ${i + 1}`
                 }
-                onClick={() => {
+                onPress={() => {
                   if (!playable) return
                   sound.play('tap')
                   send(EV_SHOT, { i })

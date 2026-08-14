@@ -110,7 +110,7 @@ function OddOnePlay({ api }: { api: SoloApi }) {
             cue={null}
             depth={0.93}
             aria-label={`Square ${i + 1}`}
-            onClick={() => choose(i)}
+            onPress={() => choose(i)}
             className="aspect-square rounded-lg"
             style={{ backgroundColor: i === odd ? oddColour : base }}
           />

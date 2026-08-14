@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Press } from '../../../components/Press'
 import { useKeyAction } from '../../../lib/input'
@@ -45,6 +45,10 @@ function StackPlay({ api }: { api: SoloApi }) {
   const streak = useRef(0)
   const [streakShown, setStreak] = useState(0)
   const [flash, setFlash] = useState(0)
+  // The most recent perfect landing, so a ring can bloom from exactly where
+  // the block came to rest rather than somewhere generic.
+  const hitId = useRef(0)
+  const [hit, setHit] = useState<{ n: number; x: number; w: number; y: number } | null>(null)
 
   // The slider is the only thing moving every frame, so it is written straight
   // to the DOM node. Routing it through React state would re-render the whole
@@ -100,6 +104,10 @@ function StackPlay({ api }: { api: SoloApi }) {
 
     const perfect = below.w - overlap < PERFECT_EPS
     sound.play(perfect ? 'confirm' : 'pop')
+    // Fires on every clean landing, not just the ones that pay out width —
+    // the player needs to know the timing was right the moment it happens,
+    // otherwise a perfect drop is indistinguishable from a lucky one.
+    if (perfect) setHit({ n: hitId.current++, x: left, w: overlap, y: stack.length })
 
     // A streak of clean drops gives width back, the way the 3D stack games do.
     // Without it the tower only ever narrows, so a good run is punished at
@@ -170,6 +178,31 @@ function StackPlay({ api }: { api: SoloApi }) {
           className="pointer-events-none absolute inset-0"
           style={{ backgroundColor: 'var(--t-accent-wash)' }}
         />
+
+        {/* Expands and fades from the block that just landed. Deliberately
+            outline-only: a filled flash would hide the tower underneath at
+            exactly the moment the player is checking their alignment. */}
+        <AnimatePresence>
+          {hit ? (
+            <motion.div
+              key={hit.n}
+              initial={{ opacity: 0.9, scaleX: 1, scaleY: 1 }}
+              animate={{ opacity: 0, scaleX: 1.5, scaleY: 2.6 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.42, ease: 'easeOut' }}
+              onAnimationComplete={() => setHit((h) => (h && h.n === hit.n ? null : h))}
+              className="pointer-events-none absolute rounded-sm border-2"
+              style={{
+                left: `${hit.x}%`,
+                width: `${hit.w}%`,
+                bottom: `${hit.y * ROW_H}px`,
+                height: `${ROW_H - 3}px`,
+                borderColor: 'var(--t-accent)',
+                transformOrigin: 'center',
+              }}
+            />
+          ) : null}
+        </AnimatePresence>
 
         <div
           ref={sliderRef}

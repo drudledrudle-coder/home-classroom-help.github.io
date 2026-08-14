@@ -54,7 +54,7 @@ export function ShiftView({ state, ctx, send }: GameViewProps<ShiftState>) {
               depth={playable ? 0.93 : 1}
               disabled={!playable}
               aria-label={`Cell ${cell + 1}${owner ? ` taken by ${owner === slot ? 'you' : 'them'}` : ''}`}
-              onClick={() => {
+              onPress={() => {
                 if (!canPlace(state, slot, cell)) return
                 sound.play('pop')
                 send(EV_PLACE, { cell })

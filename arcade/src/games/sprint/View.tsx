@@ -160,7 +160,7 @@ export function SprintView({ state, ctx, send }: GameViewProps<SprintState>) {
                 cue={null}
                 depth={0.9}
                 disabled={!live || used}
-                onClick={() => pushLetter(i)}
+                onPress={() => pushLetter(i)}
                 aria-label={`Letter ${letter}`}
                 className="relative grid aspect-square place-items-center rounded-xl border disabled:pointer-events-none"
                 style={{

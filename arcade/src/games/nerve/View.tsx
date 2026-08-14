@@ -68,7 +68,7 @@ export function NerveView({ state, ctx, send }: GameViewProps<NerveState>) {
               depth={myTurn && !isOpen ? 0.9 : 1}
               disabled={!myTurn || isOpen}
               aria-label={isOpen ? (isBomb ? 'Bomb' : `${value} points`) : `Tile ${i + 1}`}
-              onClick={() => {
+              onPress={() => {
                 if (!myTurn || isOpen) return
                 sound.play('pop')
                 send(EV_FLIP, { i })

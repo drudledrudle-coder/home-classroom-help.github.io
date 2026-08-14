@@ -3,7 +3,15 @@ import { useEffect, useRef } from 'react'
 export type Dir = 'up' | 'down' | 'left' | 'right'
 
 /** Minimum travel before a drag counts as a swipe rather than a tap. */
-const SWIPE_MIN_PX = 24
+/**
+ * How far a finger travels before it counts as a swipe.
+ *
+ * Small on purpose. Steering a snake is a flick of the thumb, not a drag across
+ * the screen, and a long threshold reads as the game ignoring you.
+ */
+const SWIPE_MIN_PX = 14
+/** Minimum gap between two directions from one continuous drag. */
+const SWIPE_COOLDOWN_MS = 55
 
 /**
  * Directional input for the grid games. Swipe on touch, arrows or WASD on a
@@ -23,26 +31,58 @@ export function useDirectionInput(onDir: (dir: Dir) => void, enabled = true): vo
   useEffect(() => {
     if (!enabled) return
 
-    const start = { x: 0, y: 0, active: false }
+    const start = { x: 0, y: 0, active: false, firedAt: 0 }
 
     const onDown = (event: PointerEvent) => {
       start.x = event.clientX
       start.y = event.clientY
       start.active = true
+      start.firedAt = 0
+    }
+
+    /** Emit and re-anchor, so one held finger can keep steering. */
+    const fire = (dx: number, dy: number, x: number, y: number, now: number) => {
+      // The dominant axis wins outright; diagonal swipes should still do
+      // something predictable rather than nothing.
+      if (Math.abs(dx) > Math.abs(dy)) handler.current(dx > 0 ? 'right' : 'left')
+      else handler.current(dy > 0 ? 'down' : 'up')
+      start.x = x
+      start.y = y
+      start.firedAt = now
+    }
+
+    // Steering happens *during* the drag, not on release.
+    //
+    // Reading the gesture only on pointerup meant one direction per touch: to
+    // turn twice you had to lift and swipe again, which is why holding a thumb
+    // down and steering — the way Google's snake works, and the way everyone
+    // instinctively tries — did nothing. Re-anchoring after each turn lets a
+    // single continuous drag produce left, then up, then right.
+    const onMove = (event: PointerEvent) => {
+      if (!start.active) return
+      const now = event.timeStamp
+      if (now - start.firedAt < SWIPE_COOLDOWN_MS) return
+
+      const dx = event.clientX - start.x
+      const dy = event.clientY - start.y
+      if (Math.abs(dx) < SWIPE_MIN_PX && Math.abs(dy) < SWIPE_MIN_PX) return
+
+      fire(dx, dy, event.clientX, event.clientY, now)
     }
 
     const onUp = (event: PointerEvent) => {
       if (!start.active) return
       start.active = false
 
+      // A flick can finish before any pointermove crosses the threshold, so the
+      // release is still checked — but only if the drag never fired.
+      if (start.firedAt) return
+
       const dx = event.clientX - start.x
       const dy = event.clientY - start.y
       if (Math.abs(dx) < SWIPE_MIN_PX && Math.abs(dy) < SWIPE_MIN_PX) return
 
-      // The dominant axis wins outright; diagonal swipes should still do
-      // something predictable rather than nothing.
-      if (Math.abs(dx) > Math.abs(dy)) handler.current(dx > 0 ? 'right' : 'left')
-      else handler.current(dy > 0 ? 'down' : 'up')
+      fire(dx, dy, event.clientX, event.clientY, event.timeStamp)
     }
 
     const KEYS: Record<string, Dir> = {
@@ -65,11 +105,13 @@ export function useDirectionInput(onDir: (dir: Dir) => void, enabled = true): vo
     }
 
     window.addEventListener('pointerdown', onDown)
+    window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onUp)
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
       window.removeEventListener('keydown', onKey)

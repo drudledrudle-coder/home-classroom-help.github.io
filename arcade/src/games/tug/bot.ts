@@ -22,10 +22,21 @@ export const tugBot: BotFactory = () => {
       planned = true
 
       const rand = mulberry32(ctx.seed ^ 0x7c9a)
-      const lag = Math.max(0, api.now() - ctx.startedAt)
       let carry = 0
 
-      for (let t = FLUSH_MS; t < DURATION_MS; t += FLUSH_MS) {
+      // Anchored to *now*, not to the match start.
+      //
+      // The schedule used to be laid out against `startedAt` and any slot that
+      // had already gone by was skipped with `continue`. The first `react` does
+      // not always land on the same tick as the start — a slow first frame, a
+      // countdown, a rematch — and every millisecond of that gap silently ate
+      // taps from the front. Far enough behind and every slot was in the past,
+      // so the bot sat there doing nothing for the whole round, which is
+      // exactly the glitch that was reported. Scheduling from now means a late
+      // start costs a shorter round, never a dead opponent.
+      const remaining = Math.max(0, DURATION_MS - (api.now() - ctx.startedAt))
+
+      for (let t = FLUSH_MS; t < remaining; t += FLUSH_MS) {
         // Rate wobbles so it does not read as a metronome, and so the rope
         // visibly gives and takes rather than sliding at a constant speed.
         const rate = scale(ctx.difficulty, RATE_EASY, RATE_HARD) * (0.75 + rand() * 0.5)
@@ -35,9 +46,7 @@ export const tugBot: BotFactory = () => {
         if (taps <= 0) continue
         carry -= taps
 
-        const delay = t - lag
-        if (delay < 0) continue
-        api.emit(EV_PULL, { n: taps }, delay)
+        api.emit(EV_PULL, { n: taps }, t)
       }
     },
   }

@@ -18,18 +18,24 @@ const STEER = 0.55
 
 /* Difficulty curve. Three things tighten at once: the course runs faster, the
    gaps narrow, and the gates bunch closer together — so late runs are visibly
-   denser rather than just quicker. */
+   denser rather than just quicker.
+
+   The rates are deliberately gentle: roughly half what they were, so it takes
+   about twice as many gates to reach the same pressure. The old curve hit its
+   ceiling while the player was still learning to read a split gate, which ended
+   runs early and made the whole thing feel like a reflex test rather than a
+   level you settle into. */
 const SPEED_START = 30
 const SPEED_MAX = 104
-const SPEED_STEP = 1.6
+const SPEED_STEP = 0.82
 
 const GAP_START = 34
-const GAP_MIN = 13
-const GAP_SHRINK = 0.72
+const GAP_MIN = 14.5
+const GAP_SHRINK = 0.4
 
 const SPACING_START = 44
 const SPACING_MIN = 23
-const SPACING_TIGHTEN = 0.42
+const SPACING_TIGHTEN = 0.24
 
 /** A split gate has a pillar down the middle, so there are two ways through. */
 const SPLIT_FROM = 7
