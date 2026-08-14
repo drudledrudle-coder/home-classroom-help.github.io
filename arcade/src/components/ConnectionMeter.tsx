@@ -101,7 +101,10 @@ export function ConnectionMeter({
             <Row label="Ping" value={stats.rtt ? `${stats.rtt} ms` : '–'} />
             <Row label="Last" value={stats.lastRtt ? `${stats.lastRtt} ms` : '–'} />
             <Row label="Their move" value={stats.lag ? `${stats.lag} ms` : '–'} />
-            <Row label="Transport" value={stats.push ? 'push' : 'polling'} />
+            <Row
+              label="Transport"
+              value={stats.p2p ? 'direct' : stats.push ? 'push' : 'polling'}
+            />
             <Row label="Requests" value={String(stats.requests)} />
           </motion.div>
         ) : null}

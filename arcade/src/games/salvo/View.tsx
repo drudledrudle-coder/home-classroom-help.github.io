@@ -46,7 +46,7 @@ const BOARD_CAP = 'max(15rem, min(100%, calc(100dvh - 20rem)))'
 const PLACE_BOARD =
   'w-full max-w-[max(13rem,min(100%,calc(100dvh-24rem)))] short:max-w-[min(46vw,calc(100dvh-11rem))]'
 
-export function SalvoView({ state, ctx, send }: GameViewProps<SalvoState>) {
+export function SalvoView({ state, ctx, settled, send }: GameViewProps<SalvoState>) {
   const { slot } = ctx
   const sound = useSound()
   const theirSlot = OTHER[slot]
@@ -79,6 +79,12 @@ export function SalvoView({ state, ctx, send }: GameViewProps<SalvoState>) {
   const answeredFor = useRef(-1)
   useEffect(() => {
     if (state.phase === 'over') return
+    // Only answer a shot the sequencer has actually ordered. Over the direct
+    // channel a shot can arrive within a few milliseconds, and answering that
+    // fast put the result into the log *ahead* of the shot it answered — the
+    // reducer then dropped it for having nothing pending, and the shot hung
+    // for ever.
+    if (!settled) return
     if (defenderOf(state) !== slot || !state.pending) return
     if (answeredFor.current === state.pending.i) return
     answeredFor.current = state.pending.i
@@ -86,7 +92,7 @@ export function SalvoView({ state, ctx, send }: GameViewProps<SalvoState>) {
     const hit = fleet.includes(state.pending.i)
     const id = setTimeout(() => send(EV_RESULT, { i: state.pending!.i, hit }), 260)
     return () => clearTimeout(id)
-  }, [state, slot, fleet, send])
+  }, [state, settled, slot, fleet, send])
 
   if (placing) {
     return (

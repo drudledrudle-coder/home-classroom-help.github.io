@@ -36,6 +36,15 @@ export type GameClock = {
 
 export type GameViewProps<S extends BaseGameState> = {
   state: S
+  /**
+   * True when nothing in `state` is still provisional.
+   *
+   * A view may render an unordered peer move immediately, but must not *answer*
+   * one — a reply can outrun the move it answers and reach the sequencer first,
+   * where it is rejected for having nothing to respond to. Anything that sends
+   * an event in response to state waits for this.
+   */
+  settled: boolean
   ctx: GameCtx
   clock: GameClock
   send: (type: string, data?: unknown) => void

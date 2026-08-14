@@ -10,6 +10,8 @@ import type {
 import { MAX_PUSH_EVENTS } from '../../shared/protocol'
 import { clearGateToken, gateHeaders } from './gate'
 import { draftId, playerId } from './identity'
+import { createPeer } from './peer'
+import type { PeerApi, PeerMessage } from './peer'
 import type { NetStats, Tempo, Transport, TransportState } from './types'
 import { TEMPO_MS, emptyStats } from './types'
 
@@ -86,6 +88,89 @@ export function createOnlineTransport(init: OnlineInit): Transport {
   let heldAbort: AbortController | null = null
   /** True while we deliberately cancelled a hold, so it is not a real failure. */
   let cancelling = false
+
+  /* -- fast lane ----------------------------------------------------------- */
+  let peer: PeerApi | null = null
+  let outSignals: string[] = []
+  /**
+   * Moves heard from the peer before the server ordered them.
+   *
+   * Rendered on top of the confirmed log exactly like our own unacknowledged
+   * moves, and cleared the moment the sequenced copy shows up. The reducer is
+   * pure and the log is replayed whole, so a provisional that turns out to be
+   * ordered differently simply corrects itself on the next sync.
+   */
+  let peerPending: Array<{ at: number; event: MatchEvent }> = []
+  /** Safety net: a provisional never outlives the server round trip by much. */
+  const PEER_TTL_MS = 2_000
+
+  const peerEvents = (): MatchEvent[] => {
+    const now = Date.now()
+    peerPending = peerPending.filter((p) => now - p.at < PEER_TTL_MS)
+    return peerPending.map((p) => p.event)
+  }
+
+  /** A confirmed event retires the provisional it matches. */
+  const retirePeer = (confirmed: MatchEvent[]) => {
+    if (!peerPending.length || !confirmed.length) return
+    for (const event of confirmed) {
+      const i = peerPending.findIndex(
+        (p) =>
+          p.event.from === event.from &&
+          p.event.type === event.type &&
+          JSON.stringify(p.event.data) === JSON.stringify(event.data),
+      )
+      if (i >= 0) peerPending.splice(i, 1)
+    }
+  }
+
+  const onPeerMessage = (msg: PeerMessage) => {
+    const theirs: Slot = state.slot === 'host' ? 'guest' : 'host'
+    // Seq is provisional and sorts after everything confirmed, the same trick
+    // the local outbox uses. The server's ordering replaces it shortly.
+    peerPending.push({
+      at: Date.now(),
+      event: {
+        seq: Number.MAX_SAFE_INTEGER - 1_000_000 - peerPending.length,
+        at: Date.now() + state.clockOffset,
+        from: theirs,
+        type: msg.type,
+        data: msg.data,
+      },
+    })
+    stats = { ...stats, provisional: peerPending.length }
+    state = { ...state, pending: [...peerEvents(), ...asLocalEvents()], stats }
+    emit()
+  }
+
+  const openPeer = () => {
+    if (peer || !state.code) return
+    peer = createPeer({
+      slot: state.slot,
+      sendSignal: (raw) => {
+        outSignals.push(raw)
+        // Nudge the loop so the handshake is not paced by the hold.
+        if (!inFlight) schedule(0)
+        else if (heldAbort) {
+          cancelling = true
+          heldAbort.abort()
+          heldAbort = null
+        }
+      },
+      onMessage: onPeerMessage,
+      onOpen: () => {
+        stats = { ...stats, p2p: true }
+        state = { ...state, stats }
+        emit()
+      },
+      onClosed: () => {
+        peerPending = []
+        stats = { ...stats, p2p: false, provisional: 0 }
+        state = { ...state, stats }
+        emit()
+      },
+    })
+  }
 
   const emit = () => {
     const snapshot = state
@@ -168,8 +253,12 @@ export function createOnlineTransport(init: OnlineInit): Transport {
       stats,
     }
     if (res.events.length) noteLag(res.events)
-    state.pending = asLocalEvents()
-    state.stats = { ...stats, awaiting: outbox.length > 0 }
+    // Only worth a handshake once there is somebody to hand a channel to.
+    if (res.peers.host.joined && res.peers.guest.joined) openPeer()
+    retirePeer(res.events)
+    const provisional = peerEvents()
+    state.pending = [...provisional, ...asLocalEvents()]
+    state.stats = { ...stats, awaiting: outbox.length > 0, provisional: provisional.length }
     stats = state.stats
     emit()
   }
@@ -232,6 +321,7 @@ export function createOnlineTransport(init: OnlineInit): Transport {
           // Only ask the server to read the room aggressively while a match is
           // actually in play; in the lobby nobody is waiting on a move.
           hot: tempo === 'active',
+          signal: outSignals.length ? outSignals.splice(0, outSignals.length) : undefined,
         },
         held,
         heldAbort ?? undefined,
@@ -240,6 +330,7 @@ export function createOnlineTransport(init: OnlineInit): Transport {
       if (!held) noteRtt(rtt)
 
       if (res.ok) {
+        if (res.signals?.length) for (const raw of res.signals) peer?.accept(raw)
         if (res.waited) stats = { ...stats, push: true }
         // A server that ignores `wait` answers an empty sync instantly. Left
         // alone that would spin as fast as the network allows, so fall back to
@@ -309,7 +400,11 @@ export function createOnlineTransport(init: OnlineInit): Transport {
     },
 
     push(type, data) {
-      outbox.push({ id: draftId(), type, data })
+      const id = draftId()
+      outbox.push({ id, type, data })
+      // Straight down the channel as well. The server copy still decides the
+      // order; this only gets it onto their screen sooner.
+      peer?.send({ id, type, data })
       // Render it immediately. The board must never wait on the network to show
       // the player their own move — the log only confirms what we already drew.
       stats = { ...stats, awaiting: true }
@@ -359,6 +454,8 @@ export function createOnlineTransport(init: OnlineInit): Transport {
       if (stopped) return
       stopped = true
       running = false
+      peer?.close()
+      peer = null
       if (timer) clearTimeout(timer)
       // Release a parked request rather than leaving the server holding it open
       // for a client that has gone.

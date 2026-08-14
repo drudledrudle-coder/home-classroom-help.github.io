@@ -111,7 +111,13 @@ export function GameShell({
           className="flex min-h-full flex-col"
           style={counting ? { pointerEvents: 'none' } : undefined}
         >
-          <View state={state} ctx={ctx} clock={clock} send={match.send} />
+          <View
+            state={state}
+            ctx={ctx}
+            clock={clock}
+            settled={match.stats.provisional === 0}
+            send={match.send}
+          />
         </div>
       </div>
 

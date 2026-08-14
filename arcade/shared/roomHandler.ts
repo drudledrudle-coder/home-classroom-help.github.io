@@ -18,6 +18,8 @@ import {
   MAX_EVENTS_PER_EPOCH,
   MAX_PUSH_BYTES,
   MAX_PUSH_EVENTS,
+  MAX_SIGNAL_BYTES,
+  MAX_SIGNAL_QUEUE,
   ROOM_TTL_MS,
   generateCode,
   normalizeCode,
@@ -32,6 +34,8 @@ export type RoomDoc = {
   seq: number
   events: MatchEvent[]
   slots: Record<Slot, SlotInfo | null>
+  /** Pending WebRTC signalling per seat. Read once, then emptied. */
+  inbox?: Record<Slot, string[]>
 }
 
 /** What a read returned, plus whatever the backend needs to detect a conflict. */
@@ -79,8 +83,10 @@ function ok(
   reset: boolean,
   now: number,
   accepted: string[],
+  signals: string[] = [],
 ): RoomOkRes {
   return {
+    signals,
     ok: true,
     code: doc.code,
     slot,
@@ -257,7 +263,7 @@ async function syncRoom(
   // Answer straight away if there is anything to say, or if the caller did not
   // ask to wait. Only a genuinely empty sync is worth parking.
   if (!hold || !req.wait || !first.ok) return first
-  if (first.events.length || first.reset || first.accepted.length) {
+  if (first.events.length || first.reset || first.accepted.length || first.signals?.length) {
     return { ...first, waited: false }
   }
 
@@ -306,9 +312,16 @@ async function holdOpen(
     const stale = req.epoch !== doc.epoch
     const events = stale ? doc.events : doc.events.filter((e) => e.seq > since)
     const peersChanged = membership(peersOf(doc)) !== before
+    // Waking on signalling matters: a WebRTC handshake is a few messages back
+    // and forth, and making each one wait out a hold would stretch a
+    // sub-second negotiation into ten seconds or more.
+    const waiting = (doc.inbox?.[slot] ?? []).length > 0
 
-    if (events.length || stale || peersChanged) {
+    if (events.length || stale || peersChanged || waiting) {
       const now = hold.now()
+      // Deliberately does not drain the inbox here: this path only reads, and
+      // draining needs a write. The client re-syncs immediately, and that sync
+      // collects it through `syncOnce`.
       return { ...ok(doc, slot, events, stale, now, []), waited: true }
     }
   }
@@ -332,6 +345,22 @@ async function syncOnce(
 
     doc.slots[slot] = { playerId: req.playerId, lastSeen: now }
 
+    // Signalling: hand ours to the other seat, take whatever is waiting for us.
+    // Bounded so a stuck or hostile client cannot grow the room document
+    // without limit — signalling is a handshake, not a channel.
+    const inbox = doc.inbox ?? { host: [], guest: [] }
+    const outgoing = Array.isArray(req.signal) ? req.signal : []
+    if (outgoing.length) {
+      const other: Slot = slot === 'host' ? 'guest' : 'host'
+      const room = [...(inbox[other] ?? []), ...outgoing]
+        .filter((m) => typeof m === 'string' && m.length <= MAX_SIGNAL_BYTES)
+        .slice(-MAX_SIGNAL_QUEUE)
+      inbox[other] = room
+    }
+    const mine = inbox[slot] ?? []
+    inbox[slot] = []
+    doc.inbox = inbox
+
     const accepted: string[] = []
     for (const draft of push) {
       if (!isDraft(draft)) continue
@@ -353,7 +382,7 @@ async function syncOnce(
     const since = Number.isFinite(req.since) ? Number(req.since) : 0
     const events = stale ? doc.events : doc.events.filter((e) => e.seq > since)
 
-    return { commit: doc, res: ok(doc, slot, events, stale, now, accepted) }
+    return { commit: doc, res: ok(doc, slot, events, stale, now, accepted, mine) }
   })
 }
 

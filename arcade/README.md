@@ -347,12 +347,55 @@ If you want a true socket, the swap is contained: `src/net/types.ts` defines the
 implementations. A Supabase Realtime version would be a third file implementing the
 same six methods, with no changes to any game.
 
+### The direct fast lane
+
+Once both seats are filled the clients also open a **WebRTC data channel** and
+send every move down it as well. The server stays the sequencer — peer-to-peer
+has no authority, so if this carried the real ordering two simultaneous taps
+would order differently on each phone and the logs would diverge. Instead the
+same move goes both ways at once, whichever arrives first is *rendered* first,
+and the server's copy decides what actually happened. If it never connects,
+nothing breaks; the game just runs at the speed above.
+
+Measured between two clients on one machine, which is what two phones on the
+same wifi look like:
+
+| | Opponent sees your move |
+| --- | --- |
+| Polling (220ms) | median 135ms |
+| Long-poll | median 96ms |
+| **+ direct channel** | **median 41ms** |
+
+Your own screen renders in 38ms, so at 41ms the network has stopped being the
+bottleneck — what is left is render time.
+
+Three things are load bearing:
+
+- **Signalling rides the sync.** A handshake is a few small messages and the
+  sync is already parked, so it costs no extra round trips. SDP never enters the
+  event log: those blobs are kilobytes and would be replayed for the rest of the
+  match for something no reducer reads.
+- **A held sync wakes for signalling.** Without it each handshake step waits out
+  a hold and a sub-second negotiation stretches past ten seconds.
+- **Provisional moves may be shown, never answered.** Salvo's defender replies to
+  a shot; over the direct channel a shot arrives in milliseconds, and answering
+  that fast put the result into the log *ahead* of the shot it answered, where
+  the reducer dropped it for having nothing pending — the shot hung for ever.
+  Anything that sends an event in response to state now waits for `settled`.
+
+**No TURN.** STUN is free and public; relays are not, and there is no budget for
+them. Where STUN cannot find a path (symmetric NAT, some mobile carriers) the
+session simply stays on the server path. That is acceptable precisely because
+this is a fast lane rather than the transport — but it does make the direct
+channel a "usually", not an "always".
+
 ### Seeing the numbers
 
 The connection meter in the top bar of an online room shows three bars graded on
 smoothed round trip, and tapping it opens the live measurements — ping, last round
 trip, how long the opponent's most recent move took to arrive, whether the hold is
-being honoured (`push` vs `polling`), and the request count. Solo has no meter,
+being honoured (`direct` when the peer channel is up, `push` for long-poll,
+`polling` for the fallback), and the request count. Solo has no meter,
 because solo has no network.
 
 ---

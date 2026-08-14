@@ -95,6 +95,18 @@ export type SyncReq = {
    * a fast tick buys nothing and costs the same.
    */
   hot?: boolean
+  /**
+   * WebRTC signalling addressed to the *other* seat.
+   *
+   * Rides the sync rather than getting its own endpoint: a handshake is three
+   * or four small messages and the sync is already parked waiting, so this
+   * costs no extra round trips and no extra function invocations.
+   *
+   * Deliberately not events. SDP blobs are kilobytes and would sit in the
+   * replayed log for the rest of the match, for something no reducer will ever
+   * read.
+   */
+  signal?: string[]
 }
 
 /** Clears the event log and bumps the epoch, so a rematch starts from zero. */
@@ -138,6 +150,8 @@ export type RoomOkRes = {
    * so it can fall back to timed polling instead of asking every few seconds.
    */
   waited?: boolean
+  /** Signalling addressed to this seat. Delivered once, then cleared. */
+  signals?: string[]
   /** Ids from `push` that the server accepted, so the client can retire them. */
   accepted: string[]
 }
@@ -190,3 +204,6 @@ export const ROOM_TTL_MS = 3 * 60 * 60 * 1000
 export const MAX_EVENTS_PER_EPOCH = 2_000
 export const MAX_PUSH_BYTES = 8_192
 export const MAX_PUSH_EVENTS = 32
+/** One SDP blob is a couple of KB; this leaves room without being a channel. */
+export const MAX_SIGNAL_BYTES = 12_288
+export const MAX_SIGNAL_QUEUE = 24

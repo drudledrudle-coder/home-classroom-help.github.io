@@ -40,6 +40,17 @@ export type NetStats = {
   lag: number
   /** True once the server has proved it honours held requests. */
   push: boolean
+  /** True while a direct peer-to-peer channel is carrying moves. */
+  p2p: boolean
+  /**
+   * Peer moves shown but not yet ordered by the server.
+   *
+   * Anything that *answers* an event must wait for this to be zero. Rendering
+   * an unordered move early is free; replying to one is not, because the reply
+   * can reach the sequencer before the move it answers and be rejected as
+   * having nothing to answer.
+   */
+  provisional: number
   /** Requests sent this session, for the cost side of the trade. */
   requests: number
   /** We have a local event the sequencer has not acknowledged yet. */
@@ -51,6 +62,8 @@ export const emptyStats = (): NetStats => ({
   lastRtt: 0,
   lag: 0,
   push: false,
+  p2p: false,
+  provisional: 0,
   requests: 0,
   awaiting: false,
 })
