@@ -221,6 +221,7 @@ function PlacementBoard({
         >
           {Array.from({ length: GRID * GRID }, (_, i) => {
             const ship = taken.includes(i)
+            const run = placed.find((sh) => sh.includes(i))
             return (
               <Press
                 key={i}
@@ -234,12 +235,14 @@ function PlacementBoard({
                 // touch three times a game. The firing board, where speed
                 // actually matters, uses onPress.
                 onClick={() => tap(i)}
-                className="relative grid aspect-square place-items-center rounded-lg border"
+                className="relative grid aspect-square place-items-center overflow-hidden rounded-lg border"
                 style={{
                   borderColor: ship ? 'var(--t-accent)' : 'var(--t-line)',
                   backgroundColor: ship ? 'var(--t-accent)' : 'var(--t-surface)',
                 }}
-              />
+              >
+                {run ? <ShipCell cells={run} index={i} /> : null}
+              </Press>
             )
           })}
         </motion.div>
@@ -305,6 +308,43 @@ function PlacementBoard({
   )
 }
 
+/**
+ * The silhouette of one cell of a ship: a pointed bow, a flat middle, a squared
+ * stern. Drawn rather than iconified so a three-cell ship reads as one object
+ * spanning three squares instead of three identical stamps in a row — which is
+ * what made the old solid blocks look like nothing in particular.
+ */
+function ShipCell({ cells, index }: { cells: number[]; index: number }) {
+  const sorted = [...cells].sort((a, b) => a - b)
+  const pos = sorted.indexOf(index)
+  const horizontal = sorted.length > 1 && sorted[1] - sorted[0] === 1
+  const bow = pos === 0
+  const stern = pos === sorted.length - 1
+
+  // One cell of hull, in a 0..10 box, then rotated for vertical ships.
+  const inset = 1.6
+  const d = bow
+    ? `M5,0.6 L${10 - inset},${inset + 1} L${10 - inset},10 L${inset},10 L${inset},${inset + 1} Z`
+    : stern
+      ? `M${inset},0 L${10 - inset},0 L${10 - inset},9 Q5,10.6 ${inset},9 Z`
+      : `M${inset},0 L${10 - inset},0 L${10 - inset},10 L${inset},10 Z`
+
+  return (
+    <svg
+      viewBox="0 0 10 10"
+      className="absolute inset-0 h-full w-full"
+      style={{ transform: horizontal ? 'rotate(-90deg)' : undefined }}
+      aria-hidden
+    >
+      <path d={d} fill="var(--t-accent-ink)" opacity="0.9" />
+      {/* A single porthole marks the middle cells, so length is countable. */}
+      {!bow && !stern ? (
+        <circle cx="5" cy="5" r="1.1" fill="var(--t-accent)" opacity="0.75" />
+      ) : null}
+    </svg>
+  )
+}
+
 /** Every in-bounds straight run of `size` starting at `start`. */
 function runsAt(start: number, size: number): number[][] {
   const x = start % GRID
@@ -354,6 +394,45 @@ function regroup(flat: number[]): number[][] {
   return solve(0, remaining) ?? []
 }
 
+/**
+ * A hit, as eight square shards thrown outward on a spring.
+ *
+ * Squares rather than a smooth ring or a sprite: the whole board is squares, so
+ * the debris reads as the cell itself coming apart. Deliberately short — this
+ * fires on every hit, and anything longer than a third of a second would start
+ * to sit between the player and their next shot.
+ */
+function Blast({ id }: { id: number }) {
+  const shards = 8
+  return (
+    <span className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden>
+      {Array.from({ length: shards }, (_, k) => {
+        const angle = (k / shards) * Math.PI * 2
+        const reach = 15 + (k % 3) * 5
+        return (
+          <motion.span
+            key={`${id}-${k}`}
+            initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+            animate={{
+              x: Math.cos(angle) * reach,
+              y: Math.sin(angle) * reach,
+              opacity: 0,
+              scale: 0.3,
+            }}
+            transition={{ duration: 0.34, ease: 'easeOut' }}
+            className="absolute block"
+            style={{
+              width: 4,
+              height: 4,
+              backgroundColor: 'var(--t-accent)',
+            }}
+          />
+        )
+      })}
+    </span>
+  )
+}
+
 /* -------------------------------------------------------------------------- */
 /* Firing                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -383,6 +462,18 @@ function FiringBoard({
   const myShots = state.shots[slot]
   const theirShots = state.shots[theirSlot]
   const myHits = myShots.filter((s) => s.hit).length
+
+  // Blast only on the frame a hit is *added*, never on every re-render.
+  const [blast, setBlast] = useState<{ i: number; n: number } | null>(null)
+  const seenHits = useRef(0)
+  useEffect(() => {
+    const hits = myShots.filter((s) => s.hit)
+    if (hits.length > seenHits.current) {
+      const last = hits[hits.length - 1]
+      setBlast({ i: last.i, n: hits.length })
+    }
+    seenHits.current = hits.length
+  }, [myShots])
 
   // The cell we have just fired at, held until the answer lands. Without it the
   // board sits inert for the half-second the defender takes to reply and the tap
@@ -458,6 +549,8 @@ function FiringBoard({
                   />
                 ) : null}
 
+                {blast && blast.i === i ? <Blast key={blast.n} id={blast.n} /> : null}
+
                 <AnimatePresence>
                   {mark ? (
                     <motion.span
@@ -498,7 +591,7 @@ function FiringBoard({
                 key={i}
                 animate={{
                   backgroundColor: incoming?.hit
-                    ? 'var(--t-accent)'
+                    ? 'var(--t-danger)'
                     : ship
                       ? 'var(--t-ink)'
                       : incoming
@@ -506,8 +599,20 @@ function FiringBoard({
                         : 'var(--t-line)',
                 }}
                 transition={spring}
-                className="aspect-square rounded-[3px]"
-              />
+                className="relative aspect-square rounded-[3px]"
+              >
+                {/* A struck ship of yours is a loss, so it reads red rather
+                    than in whatever accent happens to be set. */}
+                {incoming?.hit ? (
+                  <motion.span
+                    initial={{ scale: 0.4, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={springSnap}
+                    className="absolute inset-[26%] rounded-[1px]"
+                    style={{ backgroundColor: 'var(--t-danger-ink)' }}
+                  />
+                ) : null}
+              </motion.span>
             )
           })}
         </div>

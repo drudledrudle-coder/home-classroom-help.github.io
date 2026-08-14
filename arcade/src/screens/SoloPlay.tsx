@@ -5,6 +5,7 @@ import { Countdown } from '../components/Countdown'
 import { Counter } from '../components/Counter'
 import { TopBar } from '../components/TopBar'
 import { bestIn, readBest, submitScore } from '../games/solo/bests'
+import { clearResume } from '../games/solo/resume'
 import type { Window as WindowName } from '../games/solo/bests'
 import { SOLO_GAMES } from '../games/solo/registry'
 import type { SoloApi, SoloId } from '../games/solo/types'
@@ -96,6 +97,9 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
 
   const again = useCallback(() => {
     ended.current = false
+    // "Go again" is a fresh run, not a resume — without this the remounted
+    // board would load the state it had just finished.
+    clearResume(id)
     scoreRef.current = 0
     setScore(0)
     setIsRecord(false)
@@ -104,7 +108,7 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
     setRun((n) => n + 1)
     startedAt.current = Date.now()
     if (!module.meta.selfStart) setCounting(true)
-  }, [module.meta.selfStart])
+  }, [id, module.meta.selfStart])
 
   const Play = module.Play
 

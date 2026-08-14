@@ -36,6 +36,7 @@
         root.dataset.theme = theme
 
         var accents = {
+          mono: { dark: ['#f4f2ed', '#0b0b0c'], light: ['#17150f', '#ffffff'] },
           vermillion: { dark: ['#ff4a2b', '#0b0b0c'], light: ['#de3009', '#ffffff'] },
           amber: { dark: ['#ffb020', '#0b0b0c'], light: ['#a35c00', '#ffffff'] },
           lime: { dark: ['#c9f231', '#0b0b0c'], light: ['#5c7300', '#ffffff'] },
@@ -44,7 +45,9 @@
           magenta: { dark: ['#ff5fa8', '#0b0b0c'], light: ['#c1006a', '#ffffff'] }
         }
         try {
-          var pair = accents[localStorage.getItem('arcade.accent')]
+          // Falls back to mono, the default, so a first visit does not flash the
+          // stylesheet's colour before React mounts and corrects it.
+          var pair = accents[localStorage.getItem('arcade.accent')] || accents.mono
           if (pair) {
             root.style.setProperty('--t-accent', pair[theme][0])
             root.style.setProperty('--t-accent-ink', pair[theme][1])

@@ -4,6 +4,7 @@ import { Press } from '../../../components/Press'
 import { useKeyAction } from '../../../lib/input'
 import { springSnap } from '../../../lib/motion'
 import { useSound } from '../../../lib/sound'
+import { clearResume, loadResume, saveResume } from '../resume'
 import type { SoloApi, SoloModule } from '../types'
 
 /** The board is measured in percent of its own width. */
@@ -31,7 +32,16 @@ type Row = { x: number; w: number }
 
 function StackPlay({ api }: { api: SoloApi }) {
   const sound = useSound()
-  const [rows, setRows] = useState<Row[]>([{ x: (WIDTH - START_W) / 2, w: START_W }])
+  const [rows, setRows] = useState<Row[]>(() => {
+    const saved = loadResume<Row[]>('stack')
+    return saved?.length ? saved : [{ x: (WIDTH - START_W) / 2, w: START_W }]
+  })
+
+  // Restore the height into the header immediately.
+  useEffect(() => {
+    if (rows.length > 1) api.setScore(rows.length - 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const sliderRef = useRef<HTMLDivElement>(null)
   const pos = useRef(0)
@@ -97,6 +107,7 @@ function StackPlay({ api }: { api: SoloApi }) {
     // No overlap at all means the block sails past the tower.
     if (overlap <= 0.5) {
       dead.current = true
+      clearResume('stack')
       sound.play('foul')
       setTimeout(() => api.end(), 300)
       return
@@ -142,6 +153,7 @@ function StackPlay({ api }: { api: SoloApi }) {
 
     const next = [...stack, { x: left2, w: width }]
     setRows(next)
+    saveResume<Row[]>('stack', next)
     api.setScore(next.length - 1)
     // Restart the sweep from whichever wall it was heading towards.
     pos.current = dir.current > 0 ? 0 : WIDTH - width

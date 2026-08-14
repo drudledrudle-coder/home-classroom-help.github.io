@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { springSnap, springSoft } from '../../../lib/motion'
 import { useDirectionInput } from '../../../lib/input'
 import type { Dir } from '../../../lib/input'
 import { useSound } from '../../../lib/sound'
 import { useTheme } from '../../../lib/theme'
+import { clearResume, loadResume, saveResume } from '../resume'
 import type { SoloApi, SoloModule } from '../types'
 
 const SIZE = 4
@@ -121,12 +122,31 @@ function tileStyle(value: number, dark: boolean): { background: string; color: s
   }
 }
 
+type Saved = { tiles: Tile[]; score: number }
+
 function MergePlay({ api }: { api: SoloApi }) {
   const sound = useSound()
   const { theme } = useTheme()
-  const [tiles, setTiles] = useState<Tile[]>(() => spawn(spawn([])))
-  const score = useRef(0)
+  // A restored board keeps its ids, so `nextId` has to clear them or two tiles
+  // could share a key and React would reuse the wrong DOM node.
+  const [tiles, setTiles] = useState<Tile[]>(() => {
+    const saved = loadResume<Saved>('merge')
+    if (saved?.tiles?.length) {
+      nextId = Math.max(nextId, ...saved.tiles.map((t) => t.id)) + 1
+      return saved.tiles
+    }
+    return spawn(spawn([]))
+  })
+  const score = useRef(loadResume<Saved>('merge')?.score ?? 0)
   const dead = useRef(false)
+
+  // Report the restored score straight away, or the header would read 0 until
+  // the next merge.
+  useEffect(() => {
+    if (score.current) api.setScore(score.current)
+    // Mount only: this is the hand-off from storage, not an ongoing sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Read through a ref rather than a functional updater: scoring and ending the
   // run are side effects, and a state updater must stay pure — doing it inside
@@ -150,9 +170,12 @@ function MergePlay({ api }: { api: SoloApi }) {
 
       const grown = spawn(next.tiles)
       setTiles(grown)
+      saveResume<Saved>('merge', { tiles: grown, score: score.current })
 
       if (!canMove(grown)) {
         dead.current = true
+        // The run is over; there is nothing left to come back to.
+        clearResume('merge')
         // Let the final tile land before the result card covers the board.
         setTimeout(() => api.end(), 420)
       }

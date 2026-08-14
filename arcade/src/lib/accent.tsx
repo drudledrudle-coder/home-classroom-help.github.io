@@ -12,11 +12,27 @@ import { useTheme } from './theme'
  * deriving them — lime needs black text, azure needs white.
  */
 
-export type AccentId = 'vermillion' | 'amber' | 'lime' | 'teal' | 'azure' | 'magenta'
+export type AccentId = 'mono' | 'vermillion' | 'amber' | 'lime' | 'teal' | 'azure' | 'magenta'
 
 type Variant = { c: string; ink: string }
 
 export const ACCENTS: Record<AccentId, { label: string; dark: Variant; light: Variant }> = {
+  /**
+   * Two tone: the accent *is* the ink, inverted per theme. White on black in the
+   * dark, black on white in the light, so the app reads as one material with
+   * nothing decorative in it — which is the most minimal the palette can get
+   * without removing the accent concept entirely.
+   *
+   * Danger stays red regardless (see `--t-danger`). A monochrome scheme is
+   * exactly where a warning most needs to break out of the palette, not least
+   * because "you are the imposter" in plain black would be indistinguishable
+   * from ordinary text.
+   */
+  mono: {
+    label: 'Mono',
+    dark: { c: '#f4f2ed', ink: '#0b0b0c' },
+    light: { c: '#17150f', ink: '#ffffff' },
+  },
   vermillion: {
     label: 'Vermillion',
     dark: { c: '#ff4a2b', ink: '#0b0b0c' },
@@ -50,7 +66,13 @@ export const ACCENTS: Record<AccentId, { label: string; dark: Variant; light: Va
 }
 
 export const ACCENT_IDS = Object.keys(ACCENTS) as AccentId[]
-export const DEFAULT_ACCENT: AccentId = 'vermillion'
+/**
+ * Mono by default. A first-time visitor should meet the most restrained version
+ * of the app; colour is then something they choose rather than something they
+ * have to undo. A stored choice always wins, so this only affects a fresh
+ * browser.
+ */
+export const DEFAULT_ACCENT: AccentId = 'mono'
 export const ACCENT_STORAGE_KEY = 'arcade.accent'
 
 export function isAccentId(value: unknown): value is AccentId {
