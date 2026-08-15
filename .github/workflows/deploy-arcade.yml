@@ -1,0 +1,116 @@
+# Build the arcade and ship it to Cloudflare Workers.
+#
+# Replaces the Netlify build hook: push to main, and whatever is in arcade/
+# becomes the live site. The repository root is a separate GitHub Pages site, so
+# this only fires for changes under arcade/ and never rebuilds for the rest.
+#
+# Repository secrets this needs (Settings -> Secrets and variables -> Actions):
+#
+#   CLOUDFLARE_API_TOKEN    required. Create with the "Edit Cloudflare Workers"
+#                           template, which already covers Workers Scripts,
+#                           Durable Objects and secrets.
+#   CLOUDFLARE_ACCOUNT_ID   recommended. Only strictly needed when the token can
+#                           see more than one account, but setting it removes a
+#                           guess.
+#   ARCADE_PLAYER_KEYS      optional. Comma-separated sign-in keys, one per
+#                           player. Pushed to the Worker after each deploy.
+#   ARCADE_KEY              optional. The admin account.
+#
+# The two ARCADE_* secrets are pushed rather than set by hand because a Worker
+# secret survives a deploy but not a Worker that never existed — keeping them
+# here means a rebuilt-from-scratch Worker comes back with its accounts intact.
+# Leave them unset and the deploy still works; the app simply opens with no
+# login, which is the documented behaviour when no keys are configured.
+
+name: Deploy Arcade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'arcade/**'
+      - '.github/workflows/deploy-arcade.yml'
+  # So a deploy can be re-run from a phone without pushing an empty commit.
+  workflow_dispatch:
+
+# Never let two deploys race. Not cancel-in-progress: a half-finished deploy
+# that gets killed is worse than one that finishes and is then superseded.
+concurrency:
+  group: deploy-arcade
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: arcade
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: arcade/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # `npm run build` typechecks the app and the node-side tooling, but the
+      # Worker and the Durable Objects are a third project with their own
+      # config — and they are the half that would break the deploy rather than
+      # the page.
+      - name: Typecheck the Worker
+        run: npx tsc -p tsconfig.cloudflare.json --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: arcade
+          command: deploy
+
+      # After the deploy, because a secret cannot be attached to a Worker that
+      # does not exist yet. On a first-ever deploy that leaves a few seconds
+      # where the site has no login; every later run is a no-op re-put.
+      - name: Sync Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ARCADE_PLAYER_KEYS: ${{ secrets.ARCADE_PLAYER_KEYS }}
+          ARCADE_KEY: ${{ secrets.ARCADE_KEY }}
+        run: |
+          set -euo pipefail
+
+          # printf rather than echo: a trailing newline would become part of the
+          # key. The server trims, but a secret you cannot read back is a bad
+          # place to rely on that.
+          put() {
+            if [ -n "${2:-}" ]; then
+              printf '%s' "$2" | npx wrangler secret put "$1"
+              echo "set $1"
+            else
+              echo "skipped $1 (no repository secret)"
+            fi
+          }
+
+          put ARCADE_PLAYER_KEYS "${ARCADE_PLAYER_KEYS:-}"
+          put ARCADE_KEY "${ARCADE_KEY:-}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Arcade deployed"
+            echo
+            echo "Worker: \`two-minute-arcade\`"
+            echo
+            echo "Secrets take effect on the next request, with no redeploy."
+          } >> "$GITHUB_STEP_SUMMARY"

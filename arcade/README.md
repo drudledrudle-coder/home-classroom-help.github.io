@@ -199,10 +199,35 @@ refused outright.
 
 ## Deploy
 
-Runs on **Cloudflare Workers**. The Netlify configuration is still in the
-repository and still works — it is a second, working deployment of the same app,
-it costs nothing to keep, and it makes the move reversible rather than a one-way
-door.
+Runs on **Cloudflare Workers**, shipped by GitHub Actions. Push to `main` and
+anything under `arcade/` goes live — `.github/workflows/deploy-arcade.yml`
+builds, typechecks the Worker, deploys, and pushes the Worker secrets. The rest
+of the repository is a separate GitHub Pages site, so the workflow is
+path-filtered and never fires for it.
+
+The Netlify configuration is still here and still works. It is a second,
+working deployment of the same app, it costs nothing to keep, and it makes the
+move reversible rather than a one-way door.
+
+### First-time setup
+
+Four repository secrets, under **Settings → Secrets and variables → Actions**:
+
+| Secret | Required | Where it comes from |
+| --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Yes | Cloudflare → My Profile → API Tokens → Create, using the **Edit Cloudflare Workers** template. It already covers Workers Scripts, Durable Objects and secrets. |
+| `CLOUDFLARE_ACCOUNT_ID` | Recommended | Cloudflare → Workers & Pages, right-hand sidebar. Only strictly needed when the token can see more than one account. |
+| `ARCADE_PLAYER_KEYS` | No | Comma-separated player keys. |
+| `ARCADE_KEY` | No | The admin account. |
+
+The two `ARCADE_*` values live here rather than being typed into the dashboard
+because a Worker secret survives a deploy but not a Worker that never existed —
+keeping them in the workflow means a Worker rebuilt from scratch comes back with
+its accounts intact. They are set *after* the deploy, since a secret cannot
+attach to a Worker that does not exist yet; on a first-ever deploy that leaves a
+few seconds where the site has no login.
+
+### By hand
 
 ```bash
 cd arcade
