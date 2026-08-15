@@ -9,18 +9,11 @@
  */
 
 import type { Connect, Plugin, ViteDevServer, PreviewServer } from 'vite'
-import {
-  WRONG_KEY_DELAY_MS,
-  issueToken,
-  pause,
-  safeEqual,
-  siteKey,
-  verifyToken,
-} from '../server/gateToken.ts'
+import { authorised, loginRequired } from '../server/login.ts'
 import type { RoomReq } from '../shared/protocol.ts'
 import { DEFAULT_HOLD, handleRoomRequest } from '../shared/roomHandler.ts'
 import type { RoomDoc, RoomStore, Stored } from '../shared/roomHandler.ts'
-import { identify, issueSession, playerKeys, readSession, adminKey } from '../server/accounts.ts'
+import { accountsEnabled, identify, issueSession, readSession } from '../server/accounts.ts'
 import { handleScoreRequest } from '../shared/scoreHandler.ts'
 import type { Accounts, ScoreStore, Stored as ScoreStored } from '../shared/scoreHandler.ts'
 import type { ScoreDoc, ScoreReq } from '../shared/scores.ts'
@@ -58,7 +51,7 @@ const devAccounts: Accounts = {
   identify,
   issue: issueSession,
   read: readSession,
-  enabled: () => playerKeys().length > 0 || adminKey() !== null,
+  enabled: accountsEnabled,
 }
 
 function memoryStore(): RoomStore {
@@ -119,29 +112,19 @@ export function devRoomServer(): Plugin {
       res.end(text)
     }
 
-    // Mirrors netlify/functions/gate.ts. Set ARCADE_KEY before `npm run dev`
-    // to exercise the key screen locally; unset, the gate is simply off.
-    const key = siteKey()
-
+    // Mirrors netlify/functions/gate.ts. Set ARCADE_PLAYER_KEYS (and optionally
+    // ARCADE_KEY) before `npm run dev` to exercise the login locally; unset,
+    // the app opens straight into the games.
     if (url === GATE_ROUTE) {
-      if (req.method === 'GET') return send({ required: !!key }, 200)
-      if (req.method !== 'POST') return send({ ok: false, error: 'BAD_REQUEST' }, 405)
-      if (!key) return send({ ok: true, required: false, token: null }, 200)
-      try {
-        const submitted = (JSON.parse(await readBody(req)) as { key?: unknown }).key
-        if (typeof submitted !== 'string' || !safeEqual(submitted.trim(), key)) {
-          await pause(WRONG_KEY_DELAY_MS)
-          return send({ ok: false, error: 'BAD_KEY' }, 401)
-        }
-        return send({ ok: true, required: true, token: issueToken(key) }, 200)
-      } catch {
-        return send({ ok: false, error: 'BAD_REQUEST' }, 400)
-      }
+      if (req.method !== 'GET') return send({ ok: false, error: 'BAD_REQUEST' }, 405)
+      return send({ required: loginRequired() }, 200)
     }
 
     if (req.method !== 'POST') return send({ ok: false, error: 'BAD_REQUEST' }, 405)
 
-    if (key && !verifyToken(req.headers['x-arcade-token'] as string | undefined, key)) {
+    // Rooms need a session; scores are how you get one, so they authenticate
+    // per-op inside the handler instead.
+    if (url === ROOM_ROUTE && !authorised(req.headers['x-arcade-token'] as string | undefined)) {
       return send({ ok: false, error: 'LOCKED' }, 401)
     }
 

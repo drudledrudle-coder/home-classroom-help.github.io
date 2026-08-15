@@ -10,7 +10,7 @@
  */
 
 import { getStore } from '@netlify/blobs'
-import { siteKey, verifyToken } from '../../server/gateToken.ts'
+import { authorised } from '../../server/login.ts'
 import type { RoomReq } from '../../shared/protocol.ts'
 import { DEFAULT_HOLD, handleRoomRequest } from '../../shared/roomHandler.ts'
 import type { RoomDoc, RoomStore, Stored } from '../../shared/roomHandler.ts'
@@ -45,10 +45,9 @@ export default async function handler(request: Request): Promise<Response> {
     return json({ ok: false, error: 'BAD_REQUEST', message: 'POST only' }, 405)
   }
 
-  // The key has to guard the API too, not just the entry screen — otherwise it
-  // is decoration, since rooms could still be driven directly.
-  const key = siteKey()
-  if (key && !verifyToken(request.headers.get('x-arcade-token'), key)) {
+  // Being signed in has to guard the API too, not just the entry screen —
+  // otherwise it is decoration, since rooms could still be driven directly.
+  if (!authorised(request.headers.get('x-arcade-token'))) {
     return json({ ok: false, error: 'LOCKED' }, 401)
   }
 

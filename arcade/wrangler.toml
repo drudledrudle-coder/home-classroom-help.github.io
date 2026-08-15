@@ -12,7 +12,7 @@ name = "two-minute-arcade"
 main = "cloudflare/worker.ts"
 compatibility_date = "2025-01-01"
 
-# `server/gateToken.ts` and `server/accounts.ts` use node:crypto for HMAC and a
+# `server/accounts.ts` and `server/secrets.ts` use node:crypto for HMAC and a
 # constant-time compare. Keeping one implementation across all three hosts is
 # worth more than avoiding the flag.
 compatibility_flags = ["nodejs_compat"]

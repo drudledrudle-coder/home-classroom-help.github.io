@@ -1,69 +1,47 @@
 /**
- * Client half of the site key. Holds only the unlock token the server issued —
- * never the key itself, which is never sent to the browser in the first place.
+ * One question, asked before anyone has signed in: does this deployment have
+ * accounts at all?
+ *
+ * That is all that is left here. The key itself is exchanged for a session by
+ * `account.ts`, which owns the token from then on.
  */
 
 const ENDPOINT = '/api/gate'
-const TOKEN_KEY = 'arcade.gate'
+const CACHE_KEY = 'arcade.login.required'
 
-export type UnlockResult = 'ok' | 'wrong' | 'offline'
-
-function read(name: string): string | null {
+/**
+ * The answer is remembered because the app is expected to run offline.
+ *
+ * Without a cache, an offline launch cannot tell "this arcade has no accounts"
+ * from "cannot reach the server", and it has to guess. Guessing open would let
+ * anyone play by pulling the plug; guessing closed would strand a signed-in
+ * player on a train. Having asked once, offline launches know the real answer
+ * and neither guess is needed.
+ *
+ * A first-ever visit with no network is not a case worth handling: the service
+ * worker has to install from a live page too, so there is no app to open yet.
+ */
+function cached(): boolean | null {
   try {
-    return sessionStorage.getItem(name)
+    const raw = localStorage.getItem(CACHE_KEY)
+    return raw === null ? null : raw === '1'
   } catch {
     return null
   }
 }
 
-function write(name: string, value: string | null): void {
-  try {
-    if (value === null) sessionStorage.removeItem(name)
-    else sessionStorage.setItem(name, value)
-  } catch {
-    /* storage disabled; the token just will not survive a refresh */
-  }
-}
-
-export const gateToken = (): string | null => read(TOKEN_KEY)
-export const clearGateToken = (): void => write(TOKEN_KEY, null)
-
-/**
- * Does this deployment have a key at all? Answers without revealing anything
- * about it, so the client knows whether to render the key screen.
- */
-export async function gateRequired(): Promise<boolean> {
+export async function loginRequired(): Promise<boolean> {
   try {
     const res = await fetch(ENDPOINT, { method: 'GET' })
-    if (!res.ok) return false
-    const body = (await res.json()) as { required?: boolean }
-    return !!body.required
+    if (!res.ok) throw new Error(String(res.status))
+    const required = !!((await res.json()) as { required?: boolean }).required
+    try {
+      localStorage.setItem(CACHE_KEY, required ? '1' : '0')
+    } catch {
+      /* storage disabled; we will just ask again next launch */
+    }
+    return required
   } catch {
-    // Can't reach the endpoint: let the app open rather than locking someone
-    // out of solo play over a flaky network. Room requests still fail closed
-    // server-side, so this cannot be used to bypass the key.
-    return false
+    return cached() ?? false
   }
-}
-
-export async function unlock(key: string): Promise<UnlockResult> {
-  try {
-    const res = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key }),
-    })
-    const body = (await res.json()) as { ok?: boolean; token?: string | null }
-    if (!res.ok || !body.ok) return 'wrong'
-    if (body.token) write(TOKEN_KEY, body.token)
-    return 'ok'
-  } catch {
-    return 'offline'
-  }
-}
-
-/** Header attached to every room request while a token is held. */
-export function gateHeaders(): Record<string, string> {
-  const token = gateToken()
-  return token ? { 'x-arcade-token': token } : {}
 }

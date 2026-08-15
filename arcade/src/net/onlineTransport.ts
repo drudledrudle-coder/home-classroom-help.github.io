@@ -8,7 +8,7 @@ import type {
   Slot,
 } from '../../shared/protocol'
 import { MAX_PUSH_EVENTS } from '../../shared/protocol'
-import { clearGateToken, gateHeaders } from './gate'
+import { authHeaders, signOut } from './account'
 import { draftId, playerId } from './identity'
 import { createPeer } from './peer'
 import type { PeerApi, PeerMessage } from './peer'
@@ -38,7 +38,7 @@ async function call(
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...gateHeaders() },
+      headers: { 'content-type': 'application/json', ...authHeaders() },
       body: JSON.stringify(req),
       signal: controller.signal,
     })
@@ -290,7 +290,7 @@ export function createOnlineTransport(init: OnlineInit): Transport {
     noteRtt(rtt)
     if (!res.ok) {
       // ROOM_FULL / NO_ROOM are user-facing dead ends; surface them as-is.
-      if (res.error === 'LOCKED') clearGateToken()
+      if (res.error === 'LOCKED') signOut()
       fatal(res.error)
       return false
     }
@@ -358,9 +358,9 @@ export function createOnlineTransport(init: OnlineInit): Transport {
         // Write contention. Harmless; the next tick re-reads.
         patch({ conn: { phase: 'live' } })
       } else {
-        // The token expired, or the site key was changed under us. Drop it so
-        // the app falls back to the key screen instead of retrying forever.
-        if (res.error === 'LOCKED') clearGateToken()
+        // The session expired, or the keys were changed under us. Drop it so
+        // the app falls back to the login instead of retrying forever.
+        if (res.error === 'LOCKED') signOut()
         fatal(res.error)
       }
     } catch {
@@ -498,7 +498,7 @@ export function createOnlineTransport(init: OnlineInit): Transport {
       if (joined && state.code) {
         void fetch(ENDPOINT, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', ...gateHeaders() },
+          headers: { 'content-type': 'application/json', ...authHeaders() },
           body: JSON.stringify({ op: 'leave', code: state.code, playerId: me }),
           keepalive: true,
         }).catch(() => {})

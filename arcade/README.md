@@ -57,46 +57,69 @@ same thing wherever it lands — and the puzzle is identical in every theme and 
 
 ---
 
-## The access key
+## Signing in
 
-The site is private. Visitors get a key screen before they can reach anything.
+Every player has their own key, and that key is their account. Enter it once, pick
+a name that is yours from then on, and you are in. There is no separate site
+password: the door and the account are the same thing, which is what makes the
+leaderboard automatic rather than opt-in — you cannot reach a game without being
+somebody, so a score always has somewhere to go.
 
-> **The key itself is deliberately not written down here — this repository is
-> public.** It lives in the `ARCADE_KEY` Worker secret (`npx wrangler secret
-> put ARCADE_KEY`), and in the old Netlify project's environment variables.
-> Never paste it into a file in this repo.
+> **No key is written down here — this repository is public.** Player keys live
+> in the `ARCADE_PLAYER_KEYS` Worker secret and the admin key in `ARCADE_KEY`.
+> Never paste either into a file in this repo.
 
-The key lives in the `ARCADE_KEY` environment variable on the host and is only ever
-compared inside a serverless function. It is never sent to the browser and never
-appears in the built JavaScript, so it cannot be read out of page source. It also
-guards the room API itself, not just the entry screen — otherwise it would be
-decoration, since rooms could still be driven directly.
+Keys are only ever compared inside the Worker. They are never sent to the
+browser and never appear in the built JavaScript, so they cannot be read out of
+page source. Signing in exchanges the key for a session token, and the key
+itself is then forgotten — a shared phone does not leave somebody's key sitting
+in storage for the next player to find in devtools.
 
-### Changing it
+The session guards the room API too, not just the entry screen. Otherwise it
+would be decoration, since rooms could still be driven directly.
+
+### The name
+
+Claimed once, and permanent. That is enforced on the server rather than by
+hiding the control, because it is the rule the whole board rests on: a name you
+can change is a name you can change *after* seeing the standings.
+
+### The admin key
+
+`ARCADE_KEY` is an admin account, not a player. It signs in like any other key
+but skips the name step, gets a **Rename a player** tool on the leaderboard, and
+never appears on a board itself — the person who can rename everybody should not
+also be competing with them.
+
+### Changing keys
 
 ```bash
-cd arcade && npx wrangler secret put ARCADE_KEY
+cd arcade
+npx wrangler secret put ARCADE_PLAYER_KEYS   # comma-separated, one per player
+npx wrangler secret put ARCADE_KEY           # the admin
 ```
 
 A Worker secret takes effect on the next request, with no redeploy. (On Netlify
 it was an environment variable plus a manual redeploy, because functions read
 the environment from the deploy they shipped with.)
 
-Two things worth knowing:
+Three things worth knowing:
 
-- **Changing the key signs everyone out.** Unlock tokens are signed with the key
-  itself, so old ones stop verifying the moment it changes. That is the behaviour
-  you want from a shared password, but it does mean anyone mid-game gets bounced.
-- **Deleting `ARCADE_KEY` makes the site public.** The gate disables itself when
-  the variable is unset, so a missing value degrades to "open" rather than locking
-  you out of your own site. Delete it deliberately, not by accident.
+- **Changing a key signs everyone out.** Sessions are signed with the keys, so
+  old ones stop verifying the moment any of them changes.
+- **Changing a key changes who that person is.** The player id is a hash of the
+  key, so a rotated key arrives as a new account with no name and no scores. The
+  old rows stay on the board under the old name. Rotate deliberately.
+- **Removing every key makes the site public.** With nothing configured there is
+  no login, and the app opens straight into the games — a missing variable
+  degrades to "open" rather than locking you out of your own site.
 
 A wrong guess costs the guesser about half a second, which makes brute-forcing a
-multi-word key impractical, but this is a door on a party game — not a vault. Pick
-something longer than a word or two, and keep it out of this repository, which is
-public.
+multi-word key impractical, but this is a door on a party game — not a vault.
+Pick something longer than a word or two, and keep it out of this repository.
 
-To exercise the key screen locally: `ARCADE_KEY=whatever npm run dev`.
+To exercise the login locally:
+`ARCADE_PLAYER_KEYS=whatever ARCADE_KEY=admin npm run dev`.
 
 ---
 
@@ -132,8 +155,11 @@ the *same* pure handlers, so only the storage differs.
 
 | Variable | Required | What it does |
 | --- | --- | --- |
-| `ARCADE_KEY` | No | The site access key, and the leaderboard admin key. Unset means no key screen. See above. |
-| `ARCADE_PLAYER_KEYS` | No | Comma-separated sign-in keys, one per player. Unset means nobody can sign in and the boards stay read-only. |
+| `ARCADE_PLAYER_KEYS` | No | Comma-separated sign-in keys, one per player. Each one is that player's account. |
+| `ARCADE_KEY` | No | The admin account: renames players, never appears on a board. |
+
+With neither set there is no login at all and the app opens straight into the
+games, with nobody to post as.
 
 Both are secrets and **neither belongs in this repository, which is public**. A
 player key committed here would let anyone claim that person's name and post
@@ -152,12 +178,16 @@ in the most of them. Versus games are deliberately absent: they have no single
 number to rank, and a win only means something if both clients agree it
 happened.
 
-Signing in is one key, once. The key is exchanged for a token and then
-forgotten, so a shared phone does not leave somebody's key in storage for the
-next player to read out of devtools. A name is claimed once and is permanent —
-that is enforced on the server rather than by hiding the control, since it is
-the rule the whole board rests on. The admin (`ARCADE_KEY`) can rename anyone,
-which is the escape hatch for a typo or a name that turns out to be a problem.
+**Nothing is opted into.** Signing in is how you reach a game at all, so every
+finished run posts by itself — there is no button, and no way to play for an
+hour and post nothing.
+
+**A run finished offline is not lost.** It banks in local storage and goes up
+the next time the app has a network, in a single write. The queue keeps one best
+per game rather than a log, because the board only ever records an improvement —
+so a week offline still syncs in one small request.
+
+See [Signing in](#signing-in) for keys, names, and the admin.
 
 **Scores are reported by the player's own phone, so they can be forged.** There
 is no way around that short of running every game on the server, which is not a
@@ -176,8 +206,8 @@ door.
 
 ```bash
 cd arcade
-npx wrangler secret put ARCADE_KEY          # the site key, and the board admin
 npx wrangler secret put ARCADE_PLAYER_KEYS  # comma-separated player keys
+npx wrangler secret put ARCADE_KEY          # the admin account
 npm run cf:deploy                           # build, then wrangler deploy
 ```
 
@@ -370,7 +400,8 @@ Three decisions carry the weight:
   offers the player a reload. That makes cache-first safe for the shell, which is
   what keeps a cold launch instant.
 
-`/sw.js` and `/index.html` are served `no-cache` from `netlify.toml`. That pair
+`/sw.js` and `/index.html` are served `no-cache` from `public/_headers`, in the
+form both Cloudflare and Netlify read. That pair
 is not optional: the worker decides every other file's lifetime, and the shell
 names the hashed assets, so a cached copy of either pins the whole app to an old
 build with no way to ship a fix.
@@ -383,7 +414,17 @@ does.
 Offline is visible rather than silent: a line appears inside the top bar, and
 the two controls that genuinely cannot work — create a room, join by code — are
 disabled and labelled rather than hidden, since a control that vanishes reads as
-a broken build where one that explains itself reads as a temporary state.
+a broken build where one that explains itself reads as a temporary state. What
+the line says depends on who is reading it: someone already signed in loses only
+the multiplayer half, while someone at the door loses everything, because
+signing in is the one thing that cannot happen without a network.
+
+A player who has signed in before stays signed in offline — the session is on
+the device, and the "does this deployment need a login" answer is cached from
+the last online launch, so an offline start knows the real answer instead of
+guessing. Someone who has never signed in stays at the door, which is the
+correct answer rather than an unfortunate one: they could not sign in offline
+anyway, and letting them past would make pulling the plug the way around it.
 
 That line lives *in* the header rather than floating over the page, and the
 reason is worth keeping. It started as a pill pinned to the bottom of the
@@ -764,17 +805,17 @@ arcade/
 ├── server/          site-key signing and verification (functions only)
 ├── netlify/functions/
 │   ├── room.ts      the room sequencer, backed by Netlify Blobs
-│   └── gate.ts      the key check
+│   └── gate.ts      does this deployment need a login
 ├── dev/             local stand-in for both endpoints
 ├── pwa/             service worker + the build plugin that generates its manifest
 ├── scripts/         word list generator
 └── src/
-    ├── net/         transports, useMatch, client-side prediction, gate client
+    ├── net/         transports, useMatch, client-side prediction, session + boards
     ├── games/       one directory per two-player game + the registry
     │   ├── solo/    score games, their registry and personal bests
     │   └── party/   single-device group games
     ├── components/  design system and the shared game shell
-    ├── screens/     gate, home, room, picker, ready gate, solo + party shells
+    ├── screens/     login, home, room, picker, ready gate, solo + party shells
     └── lib/         theme, accent, sound, motion, pointer + swipe input, seeded RNG, PWA
 ```
 

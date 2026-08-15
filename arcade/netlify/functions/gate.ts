@@ -1,48 +1,24 @@
 /**
- * Unlock endpoint for the site key.
+ * Does this deployment require a login?
  *
- *   GET  /api/gate  -> { required }        does this site have a key at all
- *   POST /api/gate  -> { ok, token }       exchange the key for an unlock token
+ *   GET /api/gate -> { required }
+ *
+ * That is the whole endpoint. It used to also exchange the site key for an
+ * unlock token, but the key and the account are one thing now, so the exchange
+ * happens at `/api/scores` with `op: 'signin'` — the only place that knows the
+ * player's name, which is half of what a login has to return.
+ *
+ * This answers before anyone has signed in, so it must give away nothing about
+ * the key beyond whether one exists.
  */
 
-import {
-  WRONG_KEY_DELAY_MS,
-  issueToken,
-  pause,
-  safeEqual,
-  siteKey,
-} from '../../server/gateToken.ts'
+import { loginRequired } from '../../server/login.ts'
 
 export default async function handler(request: Request): Promise<Response> {
-  const key = siteKey()
-
-  // Lets the client decide whether to show the key screen without leaking
-  // anything about the key itself.
-  if (request.method === 'GET') {
-    return json({ required: !!key }, 200)
+  if (request.method !== 'GET') {
+    return json({ ok: false, error: 'BAD_REQUEST', message: 'GET only' }, 405)
   }
-
-  if (request.method !== 'POST') {
-    return json({ ok: false, error: 'BAD_REQUEST' }, 405)
-  }
-
-  if (!key) {
-    return json({ ok: true, required: false, token: null }, 200)
-  }
-
-  let submitted: unknown
-  try {
-    submitted = ((await request.json()) as { key?: unknown }).key
-  } catch {
-    return json({ ok: false, error: 'BAD_REQUEST' }, 400)
-  }
-
-  if (typeof submitted !== 'string' || !safeEqual(submitted.trim(), key)) {
-    await pause(WRONG_KEY_DELAY_MS)
-    return json({ ok: false, error: 'BAD_KEY' }, 401)
-  }
-
-  return json({ ok: true, required: true, token: issueToken(key) }, 200)
+  return json({ required: loginRequired() }, 200)
 }
 
 function json(payload: unknown, status: number): Response {

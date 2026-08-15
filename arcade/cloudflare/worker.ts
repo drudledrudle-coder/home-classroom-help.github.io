@@ -1,11 +1,4 @@
-import {
-  WRONG_KEY_DELAY_MS,
-  issueToken,
-  pause,
-  safeEqual,
-  siteKey,
-  verifyToken,
-} from '../server/gateToken.ts'
+import { authorised, loginRequired } from '../server/login.ts'
 
 export { RoomsObject } from './RoomsObject.ts'
 export { ScoresObject } from './ScoresObject.ts'
@@ -34,8 +27,8 @@ export type Env = {
 
 /**
  * Workers hand bindings to the request rather than putting them on the process,
- * but `server/gateToken.ts` and `server/accounts.ts` read `process.env` so that
- * one implementation serves Netlify, the dev server and this. `nodejs_compat`
+ * but `server/accounts.ts` reads `process.env` so that one implementation
+ * serves Netlify, the dev server and this. `nodejs_compat`
  * gives us a writable `process.env`, so the bridge is three lines and the
  * security-carrying code stays identical across all three.
  */
@@ -49,17 +42,26 @@ export default {
     bridgeEnv(env)
     const url = new URL(request.url)
 
-    if (url.pathname === '/api/gate') return gate(request)
+    // Answers before anyone has signed in, so it gives away nothing about the
+    // key beyond whether one exists.
+    if (url.pathname === '/api/gate') {
+      if (request.method !== 'GET') {
+        return json({ ok: false, error: 'BAD_REQUEST', message: 'GET only' }, 405)
+      }
+      return json({ required: loginRequired() }, 200)
+    }
 
     if (url.pathname === '/api/room' || url.pathname === '/api/scores') {
       if (request.method !== 'POST') {
         return json({ ok: false, error: 'BAD_REQUEST', message: 'POST only' }, 405)
       }
 
-      // The key guards the API, not just the entry screen — otherwise it is
-      // decoration, since rooms and boards could be driven directly.
-      const key = siteKey()
-      if (key && !verifyToken(request.headers.get('x-arcade-token'), key)) {
+      // Being signed in guards the room API, not just the entry screen —
+      // otherwise it is decoration, since rooms could be driven directly.
+      //
+      // `/api/scores` is exempt because it is where a token comes from: it
+      // authenticates one op at a time inside the handler instead.
+      if (url.pathname === '/api/room' && !authorised(request.headers.get('x-arcade-token'))) {
         return json({ ok: false, error: 'LOCKED' }, 401)
       }
 
@@ -75,34 +77,6 @@ export default {
     // Netlify redirect used to provide.
     return env.ASSETS.fetch(request)
   },
-}
-
-/**
- * Unlock endpoint for the site key.
- *
- *   GET  /api/gate  -> { required }     does this site have a key at all
- *   POST /api/gate  -> { ok, token }    exchange the key for an unlock token
- */
-async function gate(request: Request): Promise<Response> {
-  const key = siteKey()
-
-  if (request.method === 'GET') return json({ required: !!key }, 200)
-  if (request.method !== 'POST') return json({ ok: false, error: 'BAD_REQUEST' }, 405)
-  if (!key) return json({ ok: true, required: false, token: null }, 200)
-
-  let submitted: unknown
-  try {
-    submitted = ((await request.json()) as { key?: unknown }).key
-  } catch {
-    return json({ ok: false, error: 'BAD_REQUEST' }, 400)
-  }
-
-  if (typeof submitted !== 'string' || !safeEqual(submitted.trim(), key)) {
-    await pause(WRONG_KEY_DELAY_MS)
-    return json({ ok: false, error: 'BAD_KEY' }, 401)
-  }
-
-  return json({ ok: true, required: true, token: issueToken(key) }, 200)
 }
 
 function json(payload: unknown, status: number): Response {

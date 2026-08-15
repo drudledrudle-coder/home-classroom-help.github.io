@@ -13,7 +13,7 @@
  */
 
 import { createHash, createHmac } from 'node:crypto'
-import { safeEqual } from './gateToken.ts'
+import { safeEqual } from './secrets.ts'
 
 const TTL_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -33,16 +33,26 @@ export function adminKey(): string | null {
   return trimmed ? trimmed : null
 }
 
+/** True once anything is configured, i.e. the app requires a sign-in. */
+export function accountsEnabled(): boolean {
+  return playerKeys().length > 0 || adminKey() !== null
+}
+
 /**
  * Secret the session tokens are signed with.
  *
- * Falls back to a fixed development value so the whole feature works locally
- * with nothing configured. That fallback is not a weakness in production: with
- * no `ARCADE_KEY` there is no admin key either, and with no
- * `ARCADE_PLAYER_KEYS` nobody can sign in at all.
+ * Prefers the admin key, but falls back to the player keys themselves rather
+ * than to a constant — a deployment with players and no admin still signs with
+ * something nobody outside it knows. The fixed development value is only ever
+ * reached when nothing at all is configured, and then there is nothing to
+ * protect: no key opens anything, because there are no keys.
  */
 function tokenSecret(): string {
-  return adminKey() ?? 'arcade-local-development'
+  const admin = adminKey()
+  if (admin) return admin
+  const players = playerKeys()
+  if (players.length) return `players:${players.join('|')}`
+  return 'arcade-local-development'
 }
 
 /** Stable, irreversible, and short enough to read in a URL or a log. */

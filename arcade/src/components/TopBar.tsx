@@ -4,6 +4,7 @@ import { spring, springSnap } from '../lib/motion'
 import { applyUpdate, useOnline, useUpdateReady } from '../lib/pwa'
 import { useSound } from '../lib/sound'
 import { useTheme } from '../lib/theme'
+import { useMe } from '../net/account'
 import { AccentPicker } from './AccentPicker'
 import { BackIcon, MoonIcon, SoundOffIcon, SoundOnIcon, SunIcon, TrophyIcon } from './icons'
 import { Press } from './Press'
@@ -155,6 +156,11 @@ export function TopBar({
 function StatusStrip() {
   const online = useOnline()
   const updateReady = useUpdateReady()
+  const me = useMe()
+  // What being offline costs you depends on who you are. Someone already signed
+  // in loses only the multiplayer half; someone at the door loses everything,
+  // because signing in is the one thing that cannot happen without a network.
+  const signedIn = !!me && (me.name !== null || me.admin)
 
   // Offline wins: it explains why things are failing right now, where an update
   // can wait for a better moment by definition.
@@ -186,7 +192,7 @@ function StatusStrip() {
                 {/* The reassurance is the part worth losing first when there is
                     no room for it — the state itself still reads at any width. */}
                 <span className="chrome hidden truncate text-muted/60 sm:inline">
-                  — solo and party still play
+                  {signedIn ? '— solo and party still play' : '— you need a connection to sign in'}
                 </span>
               </>
             ) : (

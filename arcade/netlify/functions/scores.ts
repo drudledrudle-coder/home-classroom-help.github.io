@@ -8,9 +8,7 @@
  */
 
 import { getStore } from '@netlify/blobs'
-import { identify, issueSession, playerKeys, readSession } from '../../server/accounts.ts'
-import { adminKey } from '../../server/accounts.ts'
-import { siteKey, verifyToken } from '../../server/gateToken.ts'
+import { accountsEnabled, identify, issueSession, readSession } from '../../server/accounts.ts'
 import { handleScoreRequest } from '../../shared/scoreHandler.ts'
 import type { Accounts, ScoreStore, Stored } from '../../shared/scoreHandler.ts'
 import type { ScoreDoc, ScoreReq } from '../../shared/scores.ts'
@@ -40,19 +38,20 @@ const accounts: Accounts = {
   identify,
   issue: issueSession,
   read: readSession,
-  enabled: () => playerKeys().length > 0 || adminKey() !== null,
+  enabled: accountsEnabled,
 }
 
+/**
+ * Deliberately not behind the token guard that `/api/room` uses.
+ *
+ * This endpoint is where a token comes from, so a blanket guard would lock the
+ * door from the inside. `handleScoreRequest` authenticates one op at a time
+ * instead: reading the boards is public, signing in carries its own key, and
+ * every write demands a session.
+ */
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
     return json({ ok: false, error: 'BAD_REQUEST', message: 'POST only' }, 405)
-  }
-
-  // The site key guards this the same way it guards rooms: the boards are only
-  // for people already through the door.
-  const key = siteKey()
-  if (key && !verifyToken(request.headers.get('x-arcade-token'), key)) {
-    return json({ ok: false, error: 'LOCKED' }, 401)
   }
 
   let body: ScoreReq

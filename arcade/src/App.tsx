@@ -6,7 +6,8 @@ import { botFor } from './games/registry'
 import type { PartyId } from './games/party/types'
 import type { SoloId } from './games/solo/types'
 import { createBotTransport } from './net/botTransport'
-import { gateRequired, gateToken } from './net/gate'
+import { announceAccount, ready as accountReady, watchForReconnect } from './net/account'
+import { loginRequired } from './net/gate'
 import { createOnlineTransport } from './net/onlineTransport'
 import type { Transport } from './net/types'
 import { Gate } from './screens/Gate'
@@ -24,6 +25,10 @@ type Route =
   | { name: 'board' }
 type GateState = 'checking' | 'locked' | 'open'
 
+// Registered once, at module scope: a run banked offline in Snake should reach
+// the board when the network returns, whatever screen the player is on by then.
+watchForReconnect()
+
 /** A shared link looks like https://host/#WXYZ. */
 function codeFromHash(): string {
   return normalizeCode(window.location.hash.replace('#', '')) ?? ''
@@ -33,16 +38,18 @@ export function App() {
   const [route, setRoute] = useState<Route>({ name: 'home' })
   const [initialCode] = useState(codeFromHash)
 
-  // Holding a token already means we can paint immediately and confirm in the
+  // Being signed in already means we can paint immediately and confirm in the
   // background — only a first visit waits on the check.
-  const [gate, setGate] = useState<GateState>(() => (gateToken() ? 'open' : 'checking'))
+  const [gate, setGate] = useState<GateState>(() => (accountReady() ? 'open' : 'checking'))
 
   useEffect(() => {
     let alive = true
-    void gateRequired().then((required) => {
+    void loginRequired().then((required) => {
       if (!alive) return
-      if (!required) setGate('open')
-      else setGate(gateToken() ? 'open' : 'locked')
+      // "Signed in" means signed in *and* named. A key with no name yet is only
+      // half an account: it has nowhere to post a score, so the name screen is
+      // part of the door rather than something to nag about later.
+      setGate(!required || accountReady() ? 'open' : 'locked')
     })
     return () => {
       alive = false
@@ -67,10 +74,11 @@ export function App() {
     setRoute({ name: 'home' })
   }, [])
 
-  /** The token expired or the key was changed; send them back to the door. */
+  /** The session expired or the keys changed; send them back to the door. */
   const relock = useCallback(() => {
     goHome()
     setGate('locked')
+    announceAccount()
   }, [goHome])
 
   const createRoom = useCallback(() => enter(createOnlineTransport({ mode: 'create' })), [enter])
@@ -102,7 +110,7 @@ export function App() {
   }, [])
 
   // Landing on a shared link goes straight into the room, but never before the
-  // key has been cleared.
+  // player has signed in.
   const autoJoined = useRef(false)
   useEffect(() => {
     if (gate !== 'open' || autoJoined.current || !initialCode) return
@@ -121,14 +129,15 @@ export function App() {
   // optimised. Leaving on purpose (the back button) still calls stop().
 
   // Blank rather than a spinner: the check is one request, and a flash of the
-  // home screen before the key screen would be worse than a beat of nothing.
+  // home screen before the login would be worse than a beat of nothing.
   if (gate === 'checking') return <div className="min-h-[100dvh] bg-bg" />
 
-  // Worth knowing how this behaves with no network: `gateRequired` fails open,
-  // so an offline visitor lands here rather than on a key screen they could not
-  // possibly satisfy. Room requests still fail closed on the server, so nothing
-  // is actually unlocked by being offline — only solo and party become reachable.
-  if (gate === 'locked') return <Gate onUnlocked={() => setGate('open')} />
+  // Offline behaviour is worth stating: a signed-in player keeps playing,
+  // because the session is stored on the device and `loginRequired` falls back
+  // to the answer it cached while online. Someone who has never signed in stays
+  // here — they could not sign in offline anyway, and letting them past would
+  // make pulling the plug the way around the door.
+  if (gate === 'locked') return <Gate onReady={() => setGate('open')} />
 
   return (
     <>

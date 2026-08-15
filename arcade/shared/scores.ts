@@ -66,6 +66,18 @@ export type Boards = {
 
 export type Me = { uid: string; name: string | null; admin: boolean }
 
+/** A finished run, as the client reports it. */
+export type Run = { game: string; score: number }
+
+/**
+ * How many queued runs one sync may carry.
+ *
+ * Generous for the case it exists for — a phone that was offline for a while —
+ * and still small enough that a hostile client cannot make the server do an
+ * unbounded amount of work in one request.
+ */
+export const MAX_SYNC = 24
+
 export type ScoreReq =
   /** Public. Anyone in the app can read the boards without signing in. */
   | { op: 'boards' }
@@ -73,6 +85,8 @@ export type ScoreReq =
   /** One-time claim. Refused once a name is set, unless an admin does it. */
   | { op: 'name'; token: string; name: string; uid?: string }
   | { op: 'submit'; token: string; game: string; score: number }
+  /** Runs banked while offline, drained in one write when the network returns. */
+  | { op: 'sync'; token: string; runs: Run[] }
 
 export type ScoreErrorCode =
   | 'BAD_REQUEST'

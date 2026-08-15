@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
-import { adminKey, identify, issueSession, playerKeys, readSession } from '../server/accounts.ts'
+import { accountsEnabled, identify, issueSession, readSession } from '../server/accounts.ts'
 import { handleScoreRequest } from '../shared/scoreHandler.ts'
 import type { Accounts, ScoreStore, Stored } from '../shared/scoreHandler.ts'
 import type { ScoreDoc, ScoreReq } from '../shared/scores.ts'
@@ -56,7 +56,7 @@ export class ScoresObject extends DurableObject {
       identify,
       issue: issueSession,
       read: readSession,
-      enabled: () => playerKeys().length > 0 || adminKey() !== null,
+      enabled: accountsEnabled,
     }
 
     const res = await handleScoreRequest(this.store(), accounts, req)

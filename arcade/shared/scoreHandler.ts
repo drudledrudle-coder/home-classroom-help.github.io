@@ -1,12 +1,13 @@
 import {
   MAX_SCORE,
+  MAX_SYNC,
   boardsOf,
   cleanName,
   emptyDoc,
   isBoardGame,
   nameKey,
 } from './scores.ts'
-import type { ScoreDoc, ScoreErrorCode, ScoreReq, ScoreRes } from './scores.ts'
+import type { BoardGame, ScoreDoc, ScoreErrorCode, ScoreReq, ScoreRes, Run } from './scores.ts'
 
 /**
  * The whole leaderboard server, with no runtime in it.
@@ -38,6 +39,18 @@ const fail = (error: ScoreErrorCode, message?: string): ScoreRes => ({ ok: false
 /** Contention here is two people finishing a run in the same instant. */
 const RETRIES = 4
 
+/**
+ * Fixed pause on a wrong key.
+ *
+ * This is the login now, so it is the one endpoint worth guessing at. There is
+ * no datastore to count attempts per address against, so a flat delay is the
+ * floor on guess rate — it caps a single attacker at a couple of tries a
+ * second, which is enough against a key nobody is going to brute-force by hand.
+ */
+const WRONG_KEY_DELAY_MS = 450
+
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
 export async function handleScoreRequest(
   store: ScoreStore,
   accounts: Accounts,
@@ -54,7 +67,10 @@ export async function handleScoreRequest(
   if (req.op === 'signin') {
     if (!accounts.enabled()) return fail('DISABLED', 'No sign-in keys are configured')
     const who = accounts.identify(req.key)
-    if (!who) return fail('BAD_KEY')
+    if (!who) {
+      await pause(WRONG_KEY_DELAY_MS)
+      return fail('BAD_KEY')
+    }
 
     const stored = await store.read()
     const doc = stored?.doc ?? emptyDoc()
@@ -95,11 +111,29 @@ export async function handleScoreRequest(
     }, session)
   }
 
-  if (req.op === 'submit') {
-    if (!isBoardGame(req.game)) return fail('BAD_REQUEST', 'unknown game')
-    const score = Math.floor(Number(req.score))
-    if (!Number.isFinite(score) || score < 0 || score > MAX_SCORE) {
-      return fail('BAD_REQUEST', 'implausible score')
+  if (req.op === 'submit' || req.op === 'sync') {
+    const runs: Run[] = req.op === 'submit' ? [{ game: req.game, score: req.score }] : req.runs
+    if (!Array.isArray(runs)) return fail('BAD_REQUEST', 'runs must be a list')
+    if (runs.length > MAX_SYNC) return fail('BAD_REQUEST', 'too many runs')
+
+    // A submit names one run and is told when that run is nonsense. A sync is a
+    // queue drained off a phone that may have been offline across a deploy, so
+    // an entry it can no longer place is dropped rather than wedging the whole
+    // queue behind it forever.
+    const strict = req.op === 'submit'
+    const clean: Array<{ game: BoardGame; score: number }> = []
+
+    for (const run of runs) {
+      if (!isBoardGame(run.game)) {
+        if (strict) return fail('BAD_REQUEST', 'unknown game')
+        continue
+      }
+      const score = Math.floor(Number(run.score))
+      if (!Number.isFinite(score) || score < 0 || score > MAX_SCORE) {
+        if (strict) return fail('BAD_REQUEST', 'implausible score')
+        continue
+      }
+      clean.push({ game: run.game, score })
     }
 
     return commit(store, (doc) => {
@@ -107,11 +141,17 @@ export async function handleScoreRequest(
       // board, so the name is the price of entry.
       if (!doc.users[session.uid]) return fail('BAD_NAME', 'claim a name first')
 
-      const game = (doc.best[req.game] ??= {})
-      const prev = game[session.uid]
-      // Only an improvement is written. A worse run is not an error — it is
-      // most runs — so this succeeds and simply changes nothing.
-      if (!prev || score > prev.s) game[session.uid] = { s: score, t: now }
+      for (const { game, score } of clean) {
+        const board = (doc.best[game] ??= {})
+        const prev = board[session.uid]
+        // Only an improvement is written. A worse run is not an error — it is
+        // most runs — so this succeeds and simply changes nothing.
+        //
+        // Stamped with arrival time even for a run played hours ago offline.
+        // That time only breaks ties on the board, and taking it from the
+        // client would let anyone claim an ancient one to win every tie.
+        if (!prev || score > prev.s) board[session.uid] = { s: score, t: now }
+      }
       return null
     }, session)
   }
