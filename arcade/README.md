@@ -536,6 +536,18 @@ smooth: Snake still *simulates* on a discrete grid, but each frame it pushes the
 fraction of a cell forward and retracts the tail by the same fraction along one stroked
 polyline, so the logic stays simple while the motion stops stepping.
 
+Snake's turn is worth reading if you are tuning feel, because the obvious answer was
+wrong twice. Rotating the head the instant the swipe landed was the most *responsive*
+thing to do and read as a twitch; bringing the pending step forward when a turn arrived
+late in a tick made the input land sooner and made the cadence irregular, which is the
+thing that actually makes a grid game unpleasant to watch. Both are gone. A turn now
+commits on the cell boundary and the head holds its old heading for the first quarter of
+the cell before easing round over the next sixty percent, so the snake drives into the
+junction and then turns. The rotation is a function of *progress through the cell*
+rather than of elapsed time, which keeps it in step at every speed — and means a
+finished sweep must be folded back into the resting angle on the next tick, or it
+replays from the start the moment progress returns to zero.
+
 **A two-player game** is a directory of four files. Nothing outside it needs to know
 it exists except one line in the registry.
 

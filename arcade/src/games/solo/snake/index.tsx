@@ -21,20 +21,19 @@ const THICKNESS = 0.74
 const CORNER_R = 0.46
 
 /**
- * How far into a tick a turn may arrive and still be taken *now* rather than
- * next time.
+ * How the head sweeps through a corner, as fractions of one tick.
  *
- * The grid is the honest model but it is not what the player thinks they are
- * doing: they swipe, and they expect the snake to turn. Past this point in the
- * tick the remaining wait is long enough to read as a dropped input, so the
- * pending step is simply brought forward. It costs nothing — the tick was about
- * to happen anyway — and it is the single biggest reason the controls feel
- * tight rather than laggy.
+ * The head holds its old direction for the first quarter of the cell and then
+ * eases round over the next sixty percent — so the snake drives *into* the
+ * junction before it turns, the way it does in Google's. Rotating on the input
+ * instead, as fast as the eye could follow, was technically the most responsive
+ * thing to do and read as a twitch; a turn wants to look like momentum.
+ *
+ * Tied to the tick rather than to wall-clock time, so it stays in step with the
+ * movement at every speed and always finishes inside its own cell.
  */
-const LATE_TURN = 0.55
-
-/** Degrees the head sweeps per millisecond. 90° in about 70ms: read as instant. */
-const TURN_RATE = 90 / 70
+const TURN_DELAY = 0.25
+const TURN_SPAN = 0.6
 
 type Cell = { x: number; y: number }
 
@@ -145,17 +144,12 @@ function SnakePlay({ api }: { api: SoloApi }) {
   const dead = useRef(false)
 
   /**
-   * Where the head is *pointing*, which runs ahead of where the body is moving.
-   *
-   * The simulation can only turn on a tick, but the player turned when they
-   * swiped. Pointing the head immediately gives the input somewhere to land on
-   * the very next frame, so the grid underneath stops being the thing you feel.
+   * The corner currently being swept: where the head started, and how far round
+   * it is going. Both are set when a turn *commits*, on the tick.
    */
-  const facing = useRef<Dir>('up')
-  const angle = useRef(ANGLE.up)
+  const turnFrom = useRef(ANGLE.up)
+  const turnDiff = useRef(0)
 
-  // Lets a turn pull the pending step forward; assigned by the simulation.
-  const stepRef = useRef<() => void>(() => {})
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const turn = useCallback(
@@ -168,20 +162,11 @@ function SnakePlay({ api }: { api: SoloApi }) {
       if (queued.current.length >= 2) return
 
       queued.current.push(dir)
-      // Answer on this frame: the head swings and a cue fires, both well before
-      // the tick that actually moves anything.
-      facing.current = dir
+      // The cue is the immediate half of the answer, and deliberately the only
+      // immediate half. It says the swipe landed without moving anything, so the
+      // input can be acknowledged on this frame while the turn itself still
+      // waits for the cell boundary.
       sound.play('tick')
-
-      // Late in the tick, take the step now rather than making them wait out a
-      // gap they will read as the swipe being ignored.
-      if (
-        queued.current.length === 1 &&
-        performance.now() - tickAt.current >= tickMs.current * LATE_TURN
-      ) {
-        if (timerRef.current) clearTimeout(timerRef.current)
-        stepRef.current()
-      }
     },
     [sound],
   )
@@ -195,11 +180,27 @@ function SnakePlay({ api }: { api: SoloApi }) {
     const step = () => {
       const cells = body.current
       const next = queued.current.shift()
-      if (next) heading.current = next
-      // Nothing queued: the head may have been pointed somewhere it never went
-      // (a reversal, or a turn that arrived after this step). Put it back on the
-      // heading so it never lies about where the snake is going.
-      else facing.current = heading.current
+      if (next) {
+        heading.current = next
+        // Start the sweep from wherever the head actually finished the last one
+        // — which is the same thing, since a turn always completes inside its
+        // cell, but stating it that way means a change to the timing constants
+        // can never leave the head jumping back to an angle it had left.
+        const at = turnFrom.current + turnDiff.current
+        const to = ANGLE[next]
+        turnFrom.current = at
+        // Shortest way round, so turning left from north sweeps through west
+        // rather than the long way through east.
+        turnDiff.current = ((to - at + 540) % 360) - 180
+      } else {
+        // Straight on. The finished sweep has to be folded into the resting
+        // angle here: the head's rotation is a function of progress through the
+        // *current* cell, so leaving a completed turn in place would replay it
+        // from the beginning the moment the next tick sent progress back to
+        // zero — a head that swung out and snapped back, once per cell, for ever.
+        turnFrom.current += turnDiff.current
+        turnDiff.current = 0
+      }
 
       const move = DELTA[heading.current]
       const head = { x: cells[0].x + move.x, y: cells[0].y + move.y }
@@ -236,7 +237,6 @@ function SnakePlay({ api }: { api: SoloApi }) {
       timerRef.current = setTimeout(step, tickMs.current)
     }
 
-    stepRef.current = step
     tickAt.current = performance.now()
     timerRef.current = setTimeout(step, tickMs.current)
     return () => {
@@ -247,11 +247,8 @@ function SnakePlay({ api }: { api: SoloApi }) {
   /* -- rendering ----------------------------------------------------------- */
   useEffect(() => {
     let raf = 0
-    let last = performance.now()
 
     const draw = (now: number) => {
-      const dt = Math.min(64, now - last)
-      last = now
       const cells = body.current
       const poly = pathRef.current
       if (poly && cells.length) {
@@ -283,20 +280,18 @@ function SnakePlay({ api }: { api: SoloApi }) {
 
         const head = headRef.current
         if (head) {
-          // Swing towards where the player pointed, by the shortest way round,
-          // at a rate that covers a right angle in about four frames. Started on
-          // the input rather than on the tick, which is what makes a swipe feel
-          // answered before anything has actually moved.
-          const target = ANGLE[facing.current]
-          const diff = ((target - angle.current + 540) % 360) - 180
-          const stepBy = TURN_RATE * dt
-          angle.current =
-            Math.abs(diff) <= stepBy ? target : angle.current + Math.sign(diff) * stepBy
-          angle.current = ((angle.current % 360) + 360) % 360
+          // Driven by how far through the cell the snake is, not by elapsed
+          // time: it holds, then eases round, then holds again — all within the
+          // one cell the turn belongs to. Smoothstep rather than a linear sweep,
+          // so the corner starts and finishes gently instead of snapping into
+          // and out of a constant spin.
+          const p = Math.max(0, Math.min(1, (t - TURN_DELAY) / TURN_SPAN))
+          const eased = p * p * (3 - 2 * p)
+          const deg = turnFrom.current + turnDiff.current * eased
 
           const hx = cells[0].x + 0.5 + move.x * t
           const hy = cells[0].y + 0.5 + move.y * t
-          head.setAttribute('transform', `translate(${hx} ${hy}) rotate(${angle.current})`)
+          head.setAttribute('transform', `translate(${hx} ${hy}) rotate(${deg})`)
         }
       }
       raf = requestAnimationFrame(draw)
