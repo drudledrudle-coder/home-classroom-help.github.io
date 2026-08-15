@@ -19,10 +19,12 @@ const TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 /** Every key that may sign in, from the environment. */
 export function playerKeys(): string[] {
-  const raw = process.env.ARCADE_PLAYER_KEYS ?? ''
+  // Annotated rather than inferred: the Workers and Node type packages disagree
+  // about the shape of `process`, and one of them widens it to any.
+  const raw: string = process.env.ARCADE_PLAYER_KEYS ?? ''
   return raw
     .split(',')
-    .map((k) => k.trim())
+    .map((k: string) => k.trim())
     .filter(Boolean)
 }
 

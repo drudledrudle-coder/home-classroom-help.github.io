@@ -1,0 +1,38 @@
+# Cloudflare deployment.
+#
+# The Netlify config next door is kept on purpose: it is a working deployment of
+# the same app, it costs nothing to keep, and it makes this move reversible.
+#
+# Before the first deploy, set the two secrets — they are NOT in this repository
+# and must not be, since it is public:
+#   npx wrangler secret put ARCADE_KEY
+#   npx wrangler secret put ARCADE_PLAYER_KEYS
+
+name = "two-minute-arcade"
+main = "cloudflare/worker.ts"
+compatibility_date = "2025-01-01"
+
+# `server/gateToken.ts` and `server/accounts.ts` use node:crypto for HMAC and a
+# constant-time compare. Keeping one implementation across all three hosts is
+# worth more than avoiding the flag.
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# The SPA fallback the Netlify redirect used to provide: unknown paths get
+# index.html so a room link like /#WXYZ opens the app rather than a 404.
+not_found_handling = "single-page-application"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomsObject"
+
+[[durable_objects.bindings]]
+name = "SCORES"
+class_name = "ScoresObject"
+
+# SQLite-backed classes, which is what the free plan provides.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomsObject", "ScoresObject"]

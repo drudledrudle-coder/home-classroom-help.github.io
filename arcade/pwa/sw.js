@@ -11,7 +11,16 @@
 
 const VERSION = '__VERSION__'
 const CACHE = `arcade-${VERSION}`
-const SHELL = '/index.html'
+/**
+ * The shell is cached under `/`, not `/index.html`.
+ *
+ * Cloudflare's static assets answer `/index.html` with a 307 to `/`, and a
+ * redirected response cannot be put in the Cache API — so precaching that path
+ * threw away the shell and left the app with no offline support at all, on a
+ * host where everything else looked fine. Both hosts serve the app at `/`
+ * directly, so that is the honest key for it.
+ */
+const SHELL = '/'
 
 /**
  * Everything needed to open the app cold with no network.

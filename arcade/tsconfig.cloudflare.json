@@ -1,0 +1,19 @@
+{
+  "//": "The Worker. Separate from the Node config because Workers globals and Node globals are different worlds, and mixing them is how you ship code that only runs in one of them.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": ["cloudflare", "shared", "server"]
+}

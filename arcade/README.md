@@ -62,11 +62,11 @@ same thing wherever it lands — and the puzzle is identical in every theme and 
 The site is private. Visitors get a key screen before they can reach anything.
 
 > **The key itself is deliberately not written down here — this repository is
-> public.** To read the current value: Netlify → **two-minute-arcade** → Site
-> configuration → Environment variables → `ARCADE_KEY`. It is stored unhidden so
-> you can always look it up. Never paste it into a file in this repo.
+> public.** It lives in the `ARCADE_KEY` Worker secret (`npx wrangler secret
+> put ARCADE_KEY`), and in the old Netlify project's environment variables.
+> Never paste it into a file in this repo.
 
-The key lives in the `ARCADE_KEY` environment variable on Netlify and is only ever
+The key lives in the `ARCADE_KEY` environment variable on the host and is only ever
 compared inside a serverless function. It is never sent to the browser and never
 appears in the built JavaScript, so it cannot be read out of page source. It also
 guards the room API itself, not just the entry screen — otherwise it would be
@@ -74,13 +74,13 @@ decoration, since rooms could still be driven directly.
 
 ### Changing it
 
-1. Netlify → **two-minute-arcade** → Site configuration → Environment variables
-2. Edit `ARCADE_KEY`, save
-3. Deploys → **Trigger deploy** → Deploy site
+```bash
+cd arcade && npx wrangler secret put ARCADE_KEY
+```
 
-Step 3 is required: functions read environment variables from the deploy they
-shipped with, so a new value does nothing until the site redeploys. Takes about a
-minute.
+A Worker secret takes effect on the next request, with no redeploy. (On Netlify
+it was an environment variable plus a manual redeploy, because functions read
+the environment from the deploy they shipped with.)
 
 Two things worth knowing:
 
@@ -118,10 +118,15 @@ npm run typecheck    # tsc only
 npm run gen:words    # regenerate the Word Sprint dictionary (rarely needed)
 ```
 
-`npm run dev` and `npm run preview` both mount a local stand-in for the server at
-`/api/room` and `/api/gate`, backed by an in-memory Map. It runs the *same* handler
-the deployed functions run, so multiplayer and the key are fully testable locally
-without the Netlify CLI.
+```bash
+npm run cf:dev       # the real Worker + real Durable Objects, on :8787
+npm run cf:deploy    # build, then deploy to Cloudflare
+```
+
+`npm run dev` and `npm run preview` mount a local stand-in for the server at
+`/api/room`, `/api/gate` and `/api/scores`, backed by an in-memory Map — quickest
+for UI work. `npm run cf:dev` runs the genuine article. All three paths execute
+the *same* pure handlers, so only the storage differs.
 
 ## Environment variables
 
@@ -133,12 +138,12 @@ without the Netlify CLI.
 Both are secrets and **neither belongs in this repository, which is public**. A
 player key committed here would let anyone claim that person's name and post
 scores as them, which is the whole game as far as a leaderboard is concerned.
-Set them in Netlify → Site configuration → Environment variables, and redeploy —
-functions read the environment from the deploy they shipped with.
+Set them with `npx wrangler secret put`, which takes effect on the next request.
+Locally they go in `.dev.vars`, which is gitignored.
 
-Multiplayer and the leaderboard both run on Netlify Blobs, which is provisioned
-automatically and authenticates itself from inside the function — no keys, no
-dashboard setup, no SQL.
+Rooms and the leaderboard are Durable Objects — provisioned by the deploy itself,
+with no dashboard setup and no SQL. The Netlify build used Blobs for the same
+job; both are behind the same store interface.
 
 ## Leaderboards
 
@@ -164,7 +169,54 @@ refused outright.
 
 ## Deploy
 
-The site is **two-minute-arcade** → https://app.netlify.com/projects/two-minute-arcade
+Runs on **Cloudflare Workers**. The Netlify configuration is still in the
+repository and still works — it is a second, working deployment of the same app,
+it costs nothing to keep, and it makes the move reversible rather than a one-way
+door.
+
+```bash
+cd arcade
+npx wrangler secret put ARCADE_KEY          # the site key, and the board admin
+npx wrangler secret put ARCADE_PLAYER_KEYS  # comma-separated player keys
+npm run cf:deploy                           # build, then wrangler deploy
+```
+
+`npm run cf:dev` runs the real Worker and real Durable Objects locally against
+`dist/`, so everything below can be exercised before it ships. Local secrets go
+in `.dev.vars`, which is gitignored — this repository is public.
+
+### Why the move
+
+The room server used to live on Netlify Functions over Blobs, and a held request
+could only *notice* an opponent's move by re-reading the blob store on a timer:
+a read every 70ms that still answered up to 70ms late. Worse, the platform did
+not reliably honour a held request at all, so the client fell back to polling on
+a 220ms timer over a 275ms round trip — measured on a real phone as
+`TRANSPORT: POLLING`, which is roughly a second between a tap and the opponent
+seeing it.
+
+A Durable Object is single-threaded and owns the room in memory, so a write can
+hand a parked request its answer directly. The handler's poll loop is unchanged;
+its `sleep` simply resolves the moment somebody writes. Measured against the
+local Worker, a held request returns **14ms** after the move lands, and Tug's
+opponent latency with WebRTC disabled — the path those phones were stuck on —
+went from a second to **53ms**.
+
+Two things that only showed up once it was running:
+
+- **`/index.html` is a redirect on Cloudflare.** Static assets answer it with a
+  307 to `/`, and a redirected response cannot be put in the Cache API — so the
+  service worker precached nothing and offline support was silently gone on a
+  host where everything else looked fine. The shell is cached under `/`, which
+  both hosts serve directly.
+- **The hold's poll interval must stay inside `holdMs`.** Set longer, the very
+  first sleep overshoots the deadline, the loop exits without re-reading, and
+  every held request returns stale — which looks exactly like the opponent never
+  joining.
+
+### Netlify
+
+The old project is **two-minute-arcade** → https://app.netlify.com/projects/two-minute-arcade
 
 It is wired for deploy-on-push. In the Netlify UI: Site configuration → Build &
 deploy → Link repository, pick this repo, and confirm:

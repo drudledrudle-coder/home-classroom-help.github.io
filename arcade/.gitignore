@@ -3,3 +3,7 @@ dist
 .netlify
 *.local
 .DS_Store
+
+# Wrangler local secrets. Never committed: this repo is public.
+.dev.vars
+.wrangler/

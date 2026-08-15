@@ -21,7 +21,9 @@ export function pwaServiceWorker(): Plugin {
     generateBundle(_options, bundle) {
       // Static files from `public/`, which never appear in the bundle graph.
       const precache = new Set<string>([
-        '/index.html',
+        // `/`, not `/index.html` — see the note on SHELL in sw.js. One host
+        // redirects the latter, and a redirect cannot be cached.
+        '/',
         '/site.webmanifest',
         '/favicon.svg',
         '/icon-192.png',
