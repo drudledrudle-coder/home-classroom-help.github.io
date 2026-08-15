@@ -5,7 +5,7 @@ import { applyUpdate, useOnline, useUpdateReady } from '../lib/pwa'
 import { useSound } from '../lib/sound'
 import { useTheme } from '../lib/theme'
 import { AccentPicker } from './AccentPicker'
-import { BackIcon, MoonIcon, SoundOffIcon, SoundOnIcon, SunIcon } from './icons'
+import { BackIcon, MoonIcon, SoundOffIcon, SoundOnIcon, SunIcon, TrophyIcon } from './icons'
 import { Press } from './Press'
 
 function IconToggle({
@@ -35,11 +35,19 @@ export function TopBar({
   onBack,
   center,
   trailing,
+  onBoard,
 }: {
   onBack?: () => void
   center?: ReactNode
   /** Room-only extras, e.g. the connection meter. */
   trailing?: ReactNode
+  /**
+   * Opens the leaderboard. Given as an icon beside the other controls rather
+   * than a row on the home screen: it is a place you go occasionally, and a
+   * full-width entry sitting under the games made the menu read as four things
+   * to decide between instead of one list of games.
+   */
+  onBoard?: () => void
 }) {
   const { theme, toggle } = useTheme()
   const sound = useSound()
@@ -87,6 +95,11 @@ export function TopBar({
 
         <div className="flex flex-1 shrink-0 items-center justify-end gap-0.5">
           {trailing}
+          {onBoard ? (
+            <IconToggle onClick={onBoard} label="Leaderboard">
+              <TrophyIcon />
+            </IconToggle>
+          ) : null}
           <AccentPicker />
           <IconToggle
             onClick={sound.toggle}

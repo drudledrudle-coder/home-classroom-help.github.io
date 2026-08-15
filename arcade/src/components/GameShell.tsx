@@ -67,8 +67,28 @@ export function GameShell({
   const duration = module.meta.durationMs
   const View = module.View
 
+  // Whose go it is, for the games that have such a thing. Untouched during the
+  // countdown and after the final move, when "your turn" would be a lie.
+  const myTurn = state.turn === slot && !over && !counting
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* The screen itself says whose go it is.
+          A lifted ground on your turn and the plain page on theirs — the same
+          signal a board game gives by sliding the box towards you. It is behind
+          everything and animates only its own colour, so it costs one composited
+          layer and can never intercept a tap. Games with no turns simply never
+          set `turn`, and this stays at the base colour for the whole match. */}
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10"
+        animate={{
+          backgroundColor: myTurn
+            ? 'color-mix(in srgb, var(--t-ink) 7%, var(--t-bg))'
+            : 'var(--t-bg)',
+        }}
+        transition={{ duration: 0.45, ease: 'easeInOut' }}
+      />
       {/* Score line. Deliberately small and tracked-out so the board reads as
           the loud element on the screen. */}
       <div className="mx-auto w-full max-w-3xl px-4 pt-3 sm:px-6 short:pt-1">

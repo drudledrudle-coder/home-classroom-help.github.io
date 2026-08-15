@@ -11,8 +11,16 @@ const START_MS = 190
 const MIN_MS = 88
 /** How much faster each apple makes it. */
 const SPEEDUP_MS = 4
-/** Snake thickness in cell units. */
-const THICKNESS = 0.74
+/**
+ * Snake thickness in cell units.
+ *
+ * Thicker than it needs to be, because a fat snake turns better: the corner arc
+ * is a fixed fraction of a cell, so the wider the body the more of the turn is
+ * hidden inside its own width and the less the centre line's change of
+ * direction reads as a hinge. Past about 0.9 the gaps between parallel runs
+ * close up and the tail stops being legible behind the body.
+ */
+const THICKNESS = 0.86
 /**
  * Corner radius in cell units. Half a cell is the most an arc can take without
  * cutting into the neighbouring segment, so the body rounds a corner as fully
@@ -126,6 +134,7 @@ function SnakePlay({ api }: { api: SoloApi }) {
   const [started, setStarted] = useState(false)
   const [length, setLength] = useState(3)
   const [burst, setBurst] = useState<{ n: number; x: number; y: number } | null>(null)
+  const [crash, setCrash] = useState<{ x: number; y: number; wall: boolean } | null>(null)
 
   const pathRef = useRef<SVGPathElement>(null)
   const headRef = useRef<SVGGElement>(null)
@@ -211,7 +220,16 @@ function SnakePlay({ api }: { api: SoloApi }) {
       if (hitWall || hitSelf) {
         dead.current = true
         sound.play('foul')
-        setTimeout(() => api.end(), 300)
+        // Where it hit, clamped back onto the board so a wall crash blooms on
+        // the edge it struck rather than off-screen where nobody can see it.
+        setCrash({
+          x: Math.max(0, Math.min(GRID - 1, head.x)) + 0.5,
+          y: Math.max(0, Math.min(GRID - 1, head.y)) + 0.5,
+          wall: hitWall,
+        })
+        // Long enough to read the crash, short enough not to sit between the
+        // player and the result card.
+        setTimeout(() => api.end(), 620)
         return
       }
 
@@ -312,9 +330,18 @@ function SnakePlay({ api }: { api: SoloApi }) {
         <span className="chrome text-muted/60">Swipe or arrows</span>
       </div>
 
-      <div
-        className="relative aspect-square w-full overflow-hidden rounded-2xl border border-line bg-surface"
-        style={{ maxWidth: 'min(100%, calc(100dvh - 16rem))' }}
+      {/* The board takes the hit. A short, hard shake along the axis it was
+          travelling would be better still, but a symmetric one reads correctly
+          for a tail collision too, where there is no wall to bounce off. */}
+      <motion.div
+        animate={crash ? { x: [0, -7, 6, -3, 0], y: [0, 3, -2, 1, 0] } : { x: 0, y: 0 }}
+        transition={{ duration: 0.34 }}
+        className="relative aspect-square w-full overflow-hidden rounded-2xl border bg-surface"
+        style={{
+          maxWidth: 'min(100%, calc(100dvh - 16rem))',
+          borderColor: crash ? 'var(--t-danger)' : 'var(--t-line)',
+          transition: 'border-color 200ms linear',
+        }}
       >
         <svg viewBox={`0 0 ${GRID} ${GRID}`} className="absolute inset-0 h-full w-full">
           {/* The apple lands, then breathes. A board where the only moving
@@ -341,8 +368,9 @@ function SnakePlay({ api }: { api: SoloApi }) {
           <path
             ref={pathRef}
             fill="none"
-            stroke="var(--t-ink)"
+            stroke={crash ? 'var(--t-danger)' : 'var(--t-ink)'}
             strokeWidth={THICKNESS}
+            style={{ transition: 'stroke 160ms linear' }}
             strokeLinecap="round"
             strokeLinejoin="round"
             opacity={0.92}
@@ -363,11 +391,55 @@ function SnakePlay({ api }: { api: SoloApi }) {
               animate={{ scale: 1 }}
               transition={{ type: 'spring', stiffness: 420, damping: 17, mass: 0.5 }}
             >
-              <circle r={THICKNESS / 2} fill="var(--t-ink)" />
+              <circle
+                r={THICKNESS / 2}
+                fill={crash ? 'var(--t-danger)' : 'var(--t-ink)'}
+                style={{ transition: 'fill 160ms linear' }}
+              />
               <circle cx={0.1} cy={-0.155} r={0.082} fill="var(--t-surface)" />
               <circle cx={0.1} cy={0.155} r={0.082} fill="var(--t-surface)" />
             </motion.g>
           </g>
+
+          {/* The crash.
+              Three things at once, because an impact is not one event: the
+              board recoils, a ring goes out from the point of contact, and
+              shards come off it. Squares rather than a puff, so the debris
+              reads as the snake itself coming apart — the same language Salvo's
+              hits use. */}
+          {crash ? (
+            <g aria-hidden>
+              <motion.circle
+                cx={crash.x}
+                cy={crash.y}
+                fill="none"
+                stroke="var(--t-danger)"
+                strokeWidth={0.16}
+                initial={{ r: THICKNESS / 2, opacity: 1 }}
+                animate={{ r: 3.2, opacity: 0 }}
+                transition={{ duration: 0.55, ease: 'easeOut' }}
+              />
+              {Array.from({ length: 10 }, (_, k) => {
+                const angle = (k / 10) * Math.PI * 2 + 0.3
+                const reach = 1.1 + (k % 3) * 0.42
+                return (
+                  <motion.rect
+                    key={k}
+                    width={0.24}
+                    height={0.24}
+                    fill="var(--t-danger)"
+                    initial={{ x: crash.x - 0.12, y: crash.y - 0.12, opacity: 1 }}
+                    animate={{
+                      x: crash.x - 0.12 + Math.cos(angle) * reach,
+                      y: crash.y - 0.12 + Math.sin(angle) * reach,
+                      opacity: 0,
+                    }}
+                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                  />
+                )
+              })}
+            </g>
+          ) : null}
 
           {/* A ring left where an apple was taken. */}
           {burst ? (
@@ -398,7 +470,7 @@ function SnakePlay({ api }: { api: SoloApi }) {
             <span className="chrome text-muted">Swipe to start</span>
           </motion.div>
         ) : null}
-      </div>
+      </motion.div>
 
       <p className="pt-4 text-center text-[0.8125rem] text-muted short:hidden">
         Eat the dot. The walls and your own tail are fatal.

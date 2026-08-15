@@ -16,7 +16,6 @@ import type { SoloId } from '../games/solo/types'
 import { spring, springSnap, stagger } from '../lib/motion'
 import { usePointerFine } from '../lib/pointer'
 import { useOnline } from '../lib/pwa'
-import { useMe } from '../net/account'
 
 export function Home({
   onCreate,
@@ -47,7 +46,7 @@ export function Home({
 
   return (
     <div className="relative flex min-h-[100dvh] flex-col">
-      <TopBar />
+      <TopBar onBoard={onBoard} />
 
       {/* `content-start` matters: without it the grid stretches its rows to fill
           the flex-1 main, which opens a dead gap between the two sections on
@@ -58,7 +57,7 @@ export function Home({
             control that vanishes reads as a broken build, where one that says
             why reads as a temporary state — and everything below still plays. */}
         <section>
-          <SectionLabel>Two players</SectionLabel>
+          <SectionLabel>Start a room</SectionLabel>
 
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -79,7 +78,7 @@ export function Home({
             transition={{ ...spring, delay: 0.06 }}
             className="mt-7"
           >
-            <SectionLabel>Have a code</SectionLabel>
+            <SectionLabel>Or join one</SectionLabel>
             <div className="mt-3.5">
               <CodeInput value={code} onChange={setCode} onComplete={join} disabled={!online} />
             </div>
@@ -102,22 +101,17 @@ export function Home({
         </section>
 
         <section className="lg:pt-0">
-          <SectionLabel>Two players, or against the bot</SectionLabel>
+          <SectionLabel>Two players</SectionLabel>
           <GameIndex onPick={onSolo} />
 
           <div className="mt-10">
-            <SectionLabel>On your own</SectionLabel>
+            <SectionLabel>Solo</SectionLabel>
             <SoloIndex onPick={onSoloScore} />
           </div>
 
           <div className="mt-10">
-            <SectionLabel>Everyone, one phone</SectionLabel>
+            <SectionLabel>Party</SectionLabel>
             <PartyIndex onPick={onParty} />
-          </div>
-
-          <div className="mt-10">
-            <SectionLabel>Everyone, every run</SectionLabel>
-            <BoardLink onOpen={onBoard} />
           </div>
         </section>
       </main>
@@ -127,32 +121,6 @@ export function Home({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <span className="chrome text-muted/70">{children}</span>
-}
-
-/** The way in to the boards, and the only place a name is ever claimed. */
-function BoardLink({ onOpen }: { onOpen: () => void }) {
-  const me = useMe()
-
-  return (
-    <ul className="mt-2 border-t border-line">
-      <li className="border-b border-line">
-        <Press
-          cue="tap"
-          depth={0.99}
-          onClick={onOpen}
-          aria-label="Open the leaderboard"
-          className="flex w-full items-baseline gap-4 py-5 text-left sm:gap-6"
-        >
-          <span className="display min-w-0 flex-1 text-[1.5rem] leading-none sm:text-[1.875rem]">
-            Leaderboard
-          </span>
-          <span className="chrome shrink-0 truncate text-muted/60">
-            {me?.name ?? 'Sign in'}
-          </span>
-        </Press>
-      </li>
-    </ul>
-  )
 }
 
 /** Single-device group games. */

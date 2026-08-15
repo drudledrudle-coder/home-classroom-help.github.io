@@ -12,6 +12,16 @@ export type BaseGameState = {
   phase: 'playing' | 'over'
   scores: Record<Slot, number>
   winner: Slot | 'tie' | null
+  /**
+   * Whose move it is, for games that take turns.
+   *
+   * Optional because half of them do not: Tug, Reaction Duel, Dot Grab and Word
+   * Sprint are simultaneous, and there is no such thing as your go. Declaring it
+   * lets the shell light the whole screen for the player who is up, which is
+   * worth far more than a line of status text — a turn you have to *read* is a
+   * turn you will miss.
+   */
+  turn?: Slot
 }
 
 export type GameCtx = {

@@ -7,6 +7,7 @@ import { useSound } from '../../../lib/sound'
 import { SECRETS } from '../words'
 import type { Secret } from '../words'
 import type { PartyModule } from '../types'
+import { useMe } from '../../../net/account'
 
 const MIN_PLAYERS = 3
 const MAX_PLAYERS = 10
@@ -45,8 +46,26 @@ function saveNames(names: string[]): void {
 
 function ImposterPlay({ onExit }: { onExit: () => void }) {
   const sound = useSound()
+  const me = useMe()
   const [players, setPlayers] = useState(4)
-  const [names, setNames] = useState<string[]>(loadNames)
+
+  /**
+   * Whoever is signed in is player one by default.
+   *
+   * The account already knows what you are called on the leaderboard, and
+   * typing it again into the first box every round is exactly the friction that
+   * stops a group playing a second time. Only ever a *default*: it fills a seat
+   * nobody has named, and never overwrites a name already typed there, because
+   * the phone gets passed around and the person holding it is not always the
+   * person who signed in.
+   */
+  const [names, setNames] = useState<string[]>(() => {
+    const stored = loadNames()
+    if (!me?.name || stored[0]?.trim()) return stored
+    const next = [...stored]
+    next[0] = me.name
+    return next
+  })
 
   /** A blank entry falls back to the position, so names are always optional. */
   const nameOf = useCallback(

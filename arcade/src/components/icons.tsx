@@ -94,3 +94,13 @@ export function LinkIcon({ size = 18, className }: IconProps) {
     </svg>
   )
 }
+
+export function TrophyIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M7.5 4h9v5.2a4.5 4.5 0 0 1-9 0z" />
+      <path d="M7.5 5.4H5a2.6 2.6 0 0 0 2.6 4.2M16.5 5.4H19a2.6 2.6 0 0 1-2.6 4.2" />
+      <path d="M12 13.8V17M9 20h6M10 17h4" />
+    </svg>
+  )
+}

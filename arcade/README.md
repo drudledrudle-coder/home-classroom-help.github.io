@@ -35,6 +35,11 @@ so the app is never a dead end.
 | --- | --- | --- |
 | Imposter | Everyone sees the same secret word except one — say a clue each and work out who is faking. | 3–10, one device |
 
+Whoever is signed in fills the first seat by default, so a group does not retype
+the same name every round. Only a default: it never overwrites a name already
+typed, because the phone gets passed around and the person holding it is not
+always the person who signed in.
+
 React + Vite + TypeScript, Tailwind v4, Framer Motion. ~125KB gzipped for the app,
 plus an 86KB dictionary chunk that only loads if someone picks Word Sprint.
 
@@ -227,6 +232,17 @@ the keyboard and the accessibility tree, with pointer events off so it cannot
 compete for the gesture.
 
 ## Feel
+
+### Whose go it is
+
+Turn-based games declare `turn` on their state, and the shell lifts the whole
+background for the player who is up — the same signal a board game gives by
+sliding the box towards you. It is a layer behind everything that animates only
+its own colour, so it costs one composited layer and can never intercept a tap.
+The four simultaneous games never set `turn`, so their ground stays put for the
+whole match, which is the behaviour a test pins down: a status line you have to
+*read* is a turn you will miss, but a screen that changes under a game with no
+turns is just noise.
 
 ### Cues
 
