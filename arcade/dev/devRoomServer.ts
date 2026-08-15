@@ -20,9 +20,46 @@ import {
 import type { RoomReq } from '../shared/protocol.ts'
 import { DEFAULT_HOLD, handleRoomRequest } from '../shared/roomHandler.ts'
 import type { RoomDoc, RoomStore, Stored } from '../shared/roomHandler.ts'
+import { identify, issueSession, playerKeys, readSession, adminKey } from '../server/accounts.ts'
+import { handleScoreRequest } from '../shared/scoreHandler.ts'
+import type { Accounts, ScoreStore, Stored as ScoreStored } from '../shared/scoreHandler.ts'
+import type { ScoreDoc, ScoreReq } from '../shared/scores.ts'
 
 const ROOM_ROUTE = '/api/room'
 const GATE_ROUTE = '/api/gate'
+const SCORE_ROUTE = '/api/scores'
+
+/**
+ * In-memory stand-in for the leaderboard blob, exercising the same
+ * compare-and-swap path the deployed function uses.
+ */
+function memoryScores(): ScoreStore {
+  let held: { doc: ScoreDoc; version: number } | null = null
+  let counter = 0
+
+  return {
+    async read(): Promise<ScoreStored | null> {
+      if (!held) return null
+      return { doc: structuredClone(held.doc), version: String(held.version) }
+    },
+    async write(doc, prev): Promise<boolean> {
+      if (prev?.version) {
+        if (!held || String(held.version) !== prev.version) return false
+      } else if (held) {
+        return false
+      }
+      held = { doc: structuredClone(doc), version: ++counter }
+      return true
+    },
+  }
+}
+
+const devAccounts: Accounts = {
+  identify,
+  issue: issueSession,
+  read: readSession,
+  enabled: () => playerKeys().length > 0 || adminKey() !== null,
+}
 
 function memoryStore(): RoomStore {
   // `version` stands in for the etag so the compare-and-swap path is exercised
@@ -68,10 +105,11 @@ function readBody(req: Connect.IncomingMessage): Promise<string> {
 
 export function devRoomServer(): Plugin {
   const store = memoryStore()
+  const scores = memoryScores()
 
   const middleware: Connect.NextHandleFunction = async (req, res, next) => {
     const url = (req.url ?? '').split('?')[0]
-    if (url !== ROOM_ROUTE && url !== GATE_ROUTE) return next()
+    if (url !== ROOM_ROUTE && url !== GATE_ROUTE && url !== SCORE_ROUTE) return next()
 
     const send = (payload: unknown, status: number) => {
       const text = JSON.stringify(payload)
@@ -105,6 +143,17 @@ export function devRoomServer(): Plugin {
 
     if (key && !verifyToken(req.headers['x-arcade-token'] as string | undefined, key)) {
       return send({ ok: false, error: 'LOCKED' }, 401)
+    }
+
+    if (url === SCORE_ROUTE) {
+      try {
+        const body = JSON.parse(await readBody(req)) as ScoreReq
+        const result = await handleScoreRequest(scores, devAccounts, body)
+        return send(result, result.ok ? 200 : 400)
+      } catch (error) {
+        console.error('[dev scores]', error)
+        return send({ ok: false, error: 'BAD_REQUEST' }, 400)
+      }
     }
 
     try {

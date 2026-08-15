@@ -1,0 +1,153 @@
+import {
+  MAX_SCORE,
+  boardsOf,
+  cleanName,
+  emptyDoc,
+  isBoardGame,
+  nameKey,
+} from './scores.ts'
+import type { ScoreDoc, ScoreErrorCode, ScoreReq, ScoreRes } from './scores.ts'
+
+/**
+ * The whole leaderboard server, with no runtime in it.
+ *
+ * Same shape as `roomHandler`: a pure function over a small store interface, so
+ * the deployed function and the local dev stand-in run identical logic and only
+ * the storage differs.
+ */
+
+export type Stored = { doc: ScoreDoc; version?: string }
+
+export interface ScoreStore {
+  read(): Promise<Stored | null>
+  /** Compare-and-swap. False means someone else wrote first; caller retries. */
+  write(doc: ScoreDoc, prev: Stored | null): Promise<boolean>
+}
+
+export type Accounts = {
+  /** Resolves a sign-in key to an account, or null if it is not one. */
+  identify(key: unknown): { uid: string; admin: boolean } | null
+  issue(uid: string, admin: boolean): string
+  read(token: unknown): { uid: string; admin: boolean } | null
+  /** False when no keys are configured at all, so the UI can say so. */
+  enabled(): boolean
+}
+
+const fail = (error: ScoreErrorCode, message?: string): ScoreRes => ({ ok: false, error, message })
+
+/** Contention here is two people finishing a run in the same instant. */
+const RETRIES = 4
+
+export async function handleScoreRequest(
+  store: ScoreStore,
+  accounts: Accounts,
+  req: ScoreReq,
+  now: number = Date.now(),
+): Promise<ScoreRes> {
+  if (!req || typeof req !== 'object') return fail('BAD_REQUEST')
+
+  if (req.op === 'boards') {
+    const stored = await store.read()
+    return { ok: true, ...boardsOf(stored?.doc ?? emptyDoc()) }
+  }
+
+  if (req.op === 'signin') {
+    if (!accounts.enabled()) return fail('DISABLED', 'No sign-in keys are configured')
+    const who = accounts.identify(req.key)
+    if (!who) return fail('BAD_KEY')
+
+    const stored = await store.read()
+    const doc = stored?.doc ?? emptyDoc()
+    return {
+      ok: true,
+      ...boardsOf(doc),
+      me: { uid: who.uid, name: doc.users[who.uid]?.name ?? null, admin: who.admin },
+      // The token is the thing the client keeps. The key is never stored, never
+      // echoed, and cannot be recovered from the id derived from it.
+      token: accounts.issue(who.uid, who.admin),
+    }
+  }
+
+  const session = accounts.read((req as { token?: unknown }).token)
+  if (!session) return fail('BAD_TOKEN')
+
+  if (req.op === 'name') {
+    const name = cleanName(req.name)
+    if (!name) return fail('BAD_NAME')
+
+    // Admins may name anyone; everyone else may only ever name themselves, and
+    // only once. That "once" is the whole point of the rule, so it is enforced
+    // here rather than by hiding the control.
+    const target = req.uid && session.admin ? req.uid : session.uid
+    if (req.uid && req.uid !== session.uid && !session.admin) return fail('NOT_ADMIN')
+
+    return commit(store, (doc) => {
+      const existing = doc.users[target]
+      if (existing && !session.admin) return fail('NAME_SET')
+
+      const wanted = nameKey(name)
+      for (const [uid, u] of Object.entries(doc.users)) {
+        if (uid !== target && nameKey(u.name) === wanted) return fail('NAME_TAKEN')
+      }
+
+      doc.users[target] = { name, at: existing?.at ?? now }
+      return null
+    }, session)
+  }
+
+  if (req.op === 'submit') {
+    if (!isBoardGame(req.game)) return fail('BAD_REQUEST', 'unknown game')
+    const score = Math.floor(Number(req.score))
+    if (!Number.isFinite(score) || score < 0 || score > MAX_SCORE) {
+      return fail('BAD_REQUEST', 'implausible score')
+    }
+
+    return commit(store, (doc) => {
+      // Posting before claiming a name would put an anonymous row on a public
+      // board, so the name is the price of entry.
+      if (!doc.users[session.uid]) return fail('BAD_NAME', 'claim a name first')
+
+      const game = (doc.best[req.game] ??= {})
+      const prev = game[session.uid]
+      // Only an improvement is written. A worse run is not an error — it is
+      // most runs — so this succeeds and simply changes nothing.
+      if (!prev || score > prev.s) game[session.uid] = { s: score, t: now }
+      return null
+    }, session)
+  }
+
+  return fail('BAD_REQUEST', 'unknown op')
+}
+
+
+/**
+ * Read, mutate, write, retry on a lost race.
+ *
+ * `mutate` returns an error to abort, or null to accept its edits. It is given
+ * a fresh copy on every attempt, so a rejected write cannot leave half of a
+ * change behind.
+ */
+async function commit(
+  store: ScoreStore,
+  mutate: (doc: ScoreDoc) => ScoreRes | null,
+  session: { uid: string; admin: boolean },
+): Promise<ScoreRes> {
+  for (let attempt = 0; attempt < RETRIES; attempt++) {
+    const stored = await store.read()
+    const doc: ScoreDoc = stored?.doc
+      ? (JSON.parse(JSON.stringify(stored.doc)) as ScoreDoc)
+      : emptyDoc()
+
+    const refused = mutate(doc)
+    if (refused) return refused
+
+    if (await store.write(doc, stored)) {
+      return {
+        ok: true,
+        ...boardsOf(doc),
+        me: { uid: session.uid, name: doc.users[session.uid]?.name ?? null, admin: session.admin },
+      }
+    }
+  }
+  return fail('CONFLICT')
+}

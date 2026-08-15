@@ -5,6 +5,7 @@ import { Countdown } from '../components/Countdown'
 import { Counter } from '../components/Counter'
 import { TopBar } from '../components/TopBar'
 import { bestIn, readBest, submitScore } from '../games/solo/bests'
+import { submitScore as postScore } from '../net/account'
 import { clearResume } from '../games/solo/resume'
 import type { Window as WindowName } from '../games/solo/bests'
 import { SOLO_GAMES } from '../games/solo/registry'
@@ -65,6 +66,12 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
         })
         sound.play(took.includes('all') ? 'win' : 'lose')
         setOver(true)
+
+        // Fire-and-forget to the leaderboard. Deliberately not awaited and
+        // deliberately unable to fail loudly: the run is over and the result
+        // card is already up, so a slow or missing network must not hold it or
+        // put an error in front of a score the player just earned.
+        void postScore(id, final)
       },
     }),
     [id, module.meta.direction, sound],

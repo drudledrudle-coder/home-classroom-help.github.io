@@ -11,6 +11,7 @@ import { createOnlineTransport } from './net/onlineTransport'
 import type { Transport } from './net/types'
 import { Gate } from './screens/Gate'
 import { Home } from './screens/Home'
+import { Leaderboard } from './screens/Leaderboard'
 import { Room } from './screens/Room'
 import { PartyPlay } from './screens/PartyPlay'
 import { SoloPlay } from './screens/SoloPlay'
@@ -20,6 +21,7 @@ type Route =
   | { name: 'room'; transport: Transport; autoSelect?: GameId }
   | { name: 'solo'; game: SoloId }
   | { name: 'party'; game: PartyId }
+  | { name: 'board' }
 type GateState = 'checking' | 'locked' | 'open'
 
 /** A shared link looks like https://host/#WXYZ. */
@@ -87,6 +89,12 @@ export function App() {
     setRoute({ name: 'solo', game })
   }, [])
 
+  const showBoard = useCallback(() => {
+    active.current?.stop()
+    active.current = null
+    setRoute({ name: 'board' })
+  }, [])
+
   const playParty = useCallback((game: PartyId) => {
     active.current?.stop()
     active.current = null
@@ -139,8 +147,11 @@ export function App() {
             onSolo={playSolo}
             onSoloScore={playSoloScore}
             onParty={playParty}
+            onBoard={showBoard}
             initialCode={initialCode}
           />
+        ) : route.name === 'board' ? (
+          <Leaderboard onExit={goHome} />
         ) : route.name === 'solo' ? (
           <SoloPlay id={route.game} onExit={goHome} />
         ) : route.name === 'party' ? (

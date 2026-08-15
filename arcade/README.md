@@ -122,11 +122,40 @@ without the Netlify CLI.
 
 | Variable | Required | What it does |
 | --- | --- | --- |
-| `ARCADE_KEY` | No | The site access key. Unset means no key screen. See above. |
+| `ARCADE_KEY` | No | The site access key, and the leaderboard admin key. Unset means no key screen. See above. |
+| `ARCADE_PLAYER_KEYS` | No | Comma-separated sign-in keys, one per player. Unset means nobody can sign in and the boards stay read-only. |
 
-That is the entire list. Multiplayer runs on Netlify Blobs, which is provisioned
+Both are secrets and **neither belongs in this repository, which is public**. A
+player key committed here would let anyone claim that person's name and post
+scores as them, which is the whole game as far as a leaderboard is concerned.
+Set them in Netlify → Site configuration → Environment variables, and redeploy —
+functions read the environment from the deploy they shipped with.
+
+Multiplayer and the leaderboard both run on Netlify Blobs, which is provisioned
 automatically and authenticates itself from inside the function — no keys, no
 dashboard setup, no SQL.
+
+## Leaderboards
+
+A board per solo game, and a **Champions** board counting who holds first place
+in the most of them. Versus games are deliberately absent: they have no single
+number to rank, and a win only means something if both clients agree it
+happened.
+
+Signing in is one key, once. The key is exchanged for a token and then
+forgotten, so a shared phone does not leave somebody's key in storage for the
+next player to read out of devtools. A name is claimed once and is permanent —
+that is enforced on the server rather than by hiding the control, since it is
+the rule the whole board rests on. The admin (`ARCADE_KEY`) can rename anyone,
+which is the escape hatch for a typo or a name that turns out to be a problem.
+
+**Scores are reported by the player's own phone, so they can be forged.** There
+is no way around that short of running every game on the server, which is not a
+trade worth making here — it is the same trust assumption Salvo's fleets already
+run on. What *is* enforced is the part where being wrong would spoil the board
+for everybody else rather than just flatter one person: you cannot post as
+someone else, you cannot take a name that is taken, and an implausible number is
+refused outright.
 
 ## Deploy
 

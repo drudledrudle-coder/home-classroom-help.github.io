@@ -16,6 +16,7 @@ import type { SoloId } from '../games/solo/types'
 import { spring, springSnap, stagger } from '../lib/motion'
 import { usePointerFine } from '../lib/pointer'
 import { useOnline } from '../lib/pwa'
+import { useMe } from '../net/account'
 
 export function Home({
   onCreate,
@@ -23,6 +24,7 @@ export function Home({
   onSolo,
   onSoloScore,
   onParty,
+  onBoard,
   initialCode = '',
 }: {
   onCreate: () => void
@@ -30,6 +32,7 @@ export function Home({
   onSolo: (game?: GameId) => void
   onSoloScore: (game: SoloId) => void
   onParty: (game: PartyId) => void
+  onBoard: () => void
   initialCode?: string
 }) {
   const [code, setCode] = useState(initialCode)
@@ -111,6 +114,11 @@ export function Home({
             <SectionLabel>Everyone, one phone</SectionLabel>
             <PartyIndex onPick={onParty} />
           </div>
+
+          <div className="mt-10">
+            <SectionLabel>Everyone, every run</SectionLabel>
+            <BoardLink onOpen={onBoard} />
+          </div>
         </section>
       </main>
     </div>
@@ -119,6 +127,32 @@ export function Home({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <span className="chrome text-muted/70">{children}</span>
+}
+
+/** The way in to the boards, and the only place a name is ever claimed. */
+function BoardLink({ onOpen }: { onOpen: () => void }) {
+  const me = useMe()
+
+  return (
+    <ul className="mt-2 border-t border-line">
+      <li className="border-b border-line">
+        <Press
+          cue="tap"
+          depth={0.99}
+          onClick={onOpen}
+          aria-label="Open the leaderboard"
+          className="flex w-full items-baseline gap-4 py-5 text-left sm:gap-6"
+        >
+          <span className="display min-w-0 flex-1 text-[1.5rem] leading-none sm:text-[1.875rem]">
+            Leaderboard
+          </span>
+          <span className="chrome shrink-0 truncate text-muted/60">
+            {me?.name ?? 'Sign in'}
+          </span>
+        </Press>
+      </li>
+    </ul>
+  )
 }
 
 /** Single-device group games. */
