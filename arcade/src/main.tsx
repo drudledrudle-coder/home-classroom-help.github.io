@@ -4,7 +4,7 @@ import { App } from './App'
 import './index.css'
 import { AccentProvider } from './lib/accent'
 import { DifficultyProvider } from './lib/difficulty'
-import { registerServiceWorker } from './lib/pwa'
+import { UPDATE_EVENT, registerServiceWorker } from './lib/pwa'
 import { SoundProvider } from './lib/sound'
 import { ThemeProvider } from './lib/theme'
 
@@ -15,7 +15,7 @@ if (!host) throw new Error('#root missing')
 // the worker's lifecycle is not tangled up with a component's. StrictMode
 // double-invokes effects in development, and registering twice from inside one
 // would race two installs against each other.
-registerServiceWorker(() => window.dispatchEvent(new Event('arcade:update-ready')))
+registerServiceWorker(() => window.dispatchEvent(new Event(UPDATE_EVENT)))
 
 createRoot(host).render(
   <StrictMode>

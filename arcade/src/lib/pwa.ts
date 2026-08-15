@@ -11,6 +11,9 @@ import { useEffect, useState } from 'react'
 
 const SW_URL = '/sw.js'
 
+/** Raised when a newer build is installed and waiting. */
+export const UPDATE_EVENT = 'arcade:update-ready'
+
 /** Set when *we* asked the waiting worker to take over, so the reload is ours. */
 let claiming = false
 
@@ -67,6 +70,25 @@ export function applyUpdate(): void {
     if (reg?.waiting) reg.waiting.postMessage('SKIP_WAITING')
     else window.location.reload()
   })
+}
+
+/**
+ * Whether a newer build has installed and is waiting to take over.
+ *
+ * Subscribes to the event `registerServiceWorker` raises, so any component can
+ * ask without the flag being threaded down from the root. Latched on: once a
+ * build is waiting it stays waiting until the page reloads.
+ */
+export function useUpdateReady(): boolean {
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    const on = () => setReady(true)
+    window.addEventListener(UPDATE_EVENT, on)
+    return () => window.removeEventListener(UPDATE_EVENT, on)
+  }, [])
+
+  return ready
 }
 
 /**

@@ -276,10 +276,19 @@ of the payload and most sessions never open it, so it is fetched on demand and
 kept from then on. It needs one online play before it works offline; nothing else
 does.
 
-Offline is visible rather than silent: a notice says so, and the two controls
-that genuinely cannot work — create a room, join by code — are disabled and
-labelled rather than hidden, since a control that vanishes reads as a broken
-build where one that explains itself reads as a temporary state.
+Offline is visible rather than silent: a line appears inside the top bar, and
+the two controls that genuinely cannot work — create a room, join by code — are
+disabled and labelled rather than hidden, since a control that vanishes reads as
+a broken build where one that explains itself reads as a temporary state.
+
+That line lives *in* the header rather than floating over the page, and the
+reason is worth keeping. It started as a pill pinned to the bottom of the
+screen, which was wrong twice over: being offline is a state rather than an
+event, so it never went away, and a persistent overlay sits exactly where games
+put their controls — Tug's tap pad, a board's last row — and swallowed the taps
+meant for them. Laid out in the header it cannot cover anything by
+construction, and it collapses to nothing when there is nothing to say. The
+"new build is waiting" prompt shares the same strip for the same reason.
 
 Built mobile-first and checked at nine viewports — 375/390 phone portrait, phone
 landscape, iPad mini/Air/Pro portrait, iPad landscape, 1440 laptop and 1920 desktop

@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
 import type { ReactNode } from 'react'
 import { spring, springSnap } from '../lib/motion'
+import { applyUpdate, useOnline, useUpdateReady } from '../lib/pwa'
 import { useSound } from '../lib/sound'
 import { useTheme } from '../lib/theme'
 import { AccentPicker } from './AccentPicker'
@@ -121,6 +122,79 @@ export function TopBar({
           </IconToggle>
         </div>
       </div>
+
+      <StatusStrip />
     </header>
+  )
+}
+
+/**
+ * Offline, and "a new build is waiting", as a line inside the header.
+ *
+ * These were a floating pill over the bottom of the screen, which was wrong in
+ * two ways: being offline is a state rather than an event, so it never went
+ * away, and a persistent overlay sits directly on top of whatever the game put
+ * at the bottom — Tug's tap pad, a board's last row — and swallowed the taps
+ * meant for it. Living in the header instead means it is laid out rather than
+ * floated, so it cannot cover a control at all, and it collapses to nothing
+ * when there is nothing to say.
+ */
+function StatusStrip() {
+  const online = useOnline()
+  const updateReady = useUpdateReady()
+
+  // Offline wins: it explains why things are failing right now, where an update
+  // can wait for a better moment by definition.
+  const show = !online ? 'offline' : updateReady ? 'update' : null
+
+  return (
+    <AnimatePresence initial={false}>
+      {show ? (
+        <motion.div
+          key={show}
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={springSnap}
+          className="overflow-hidden border-t border-line"
+          role="status"
+        >
+          <div className="mx-auto flex h-9 max-w-5xl items-center gap-2 px-3 sm:px-5 short:h-8">
+            {show === 'offline' ? (
+              <>
+                <motion.span
+                  animate={{ opacity: [1, 0.3, 1] }}
+                  transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                  className="block h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: 'var(--t-danger)' }}
+                  aria-hidden
+                />
+                <span className="chrome truncate text-muted">Offline</span>
+                {/* The reassurance is the part worth losing first when there is
+                    no room for it — the state itself still reads at any width. */}
+                <span className="chrome hidden truncate text-muted/60 sm:inline">
+                  — solo and party still play
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="chrome truncate text-muted">New version ready</span>
+                <Press
+                  cue="tap"
+                  depth={0.94}
+                  onPress={applyUpdate}
+                  className="ml-auto shrink-0 rounded-full px-3 py-1"
+                  style={{ backgroundColor: 'var(--t-accent)' }}
+                >
+                  <span className="chrome" style={{ color: 'var(--t-accent-ink)' }}>
+                    Reload
+                  </span>
+                </Press>
+              </>
+            )}
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   )
 }

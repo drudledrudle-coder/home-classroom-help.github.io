@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GameId } from '../shared/protocol'
 import { normalizeCode } from '../shared/protocol'
 import { CursorField } from './components/CursorField'
-import { Notices } from './components/Notices'
 import { botFor } from './games/registry'
 import type { PartyId } from './games/party/types'
 import type { SoloId } from './games/solo/types'
@@ -31,15 +30,6 @@ function codeFromHash(): string {
 export function App() {
   const [route, setRoute] = useState<Route>({ name: 'home' })
   const [initialCode] = useState(codeFromHash)
-
-  // Raised by the service worker registration in main.tsx when a newer build has
-  // installed and is waiting.
-  const [updateReady, setUpdateReady] = useState(false)
-  useEffect(() => {
-    const ready = () => setUpdateReady(true)
-    window.addEventListener('arcade:update-ready', ready)
-    return () => window.removeEventListener('arcade:update-ready', ready)
-  }, [])
 
   // Holding a token already means we can paint immediately and confirm in the
   // background — only a first visit waits on the check.
@@ -130,14 +120,7 @@ export function App() {
   // so an offline visitor lands here rather than on a key screen they could not
   // possibly satisfy. Room requests still fail closed on the server, so nothing
   // is actually unlocked by being offline — only solo and party become reachable.
-  if (gate === 'locked') {
-    return (
-      <>
-        <Gate onUnlocked={() => setGate('open')} />
-        <Notices updateReady={updateReady} />
-      </>
-    )
-  }
+  if (gate === 'locked') return <Gate onUnlocked={() => setGate('open')} />
 
   return (
     <>
@@ -172,7 +155,6 @@ export function App() {
           />
         )}
       </div>
-      <Notices updateReady={updateReady} />
     </>
   )
 }
