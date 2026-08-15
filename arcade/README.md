@@ -39,9 +39,16 @@ React + Vite + TypeScript, Tailwind v4, Framer Motion. ~125KB gzipped for the ap
 plus an 86KB dictionary chunk that only loads if someone picks Word Sprint.
 
 The accent colour is pickable from the swatch in the top right — six options, each
-with a hand-tuned light and dark variant, saved in localStorage. Odd One Out derives
-its two shades from whichever accent is active with `color-mix`, so it works in every
-colour and both themes without per-colour tuning.
+with a hand-tuned light and dark variant, saved in localStorage.
+
+**Odd One Out is the one thing the accent deliberately does not touch**, and it is
+worth knowing why. It used to paint its board in the accent and shift the odd square
+towards the theme's ink, which sounded elegant and meant the accent decided the
+difficulty: mixing near-black into the near-white of the mono accent is an obvious
+shift, while the same percentage into a saturated red barely moves. One accent made
+the late levels trivial and another made them unplayable. The board now owns a fixed
+neutral grey and shifts lightness in OKLCH — perceptually uniform, so a step means the
+same thing wherever it lands — and the puzzle is identical in every theme and accent.
 
 ---
 

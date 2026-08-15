@@ -463,77 +463,74 @@ function PlacementBoard({
       </div>
 
       <div className="mx-auto w-full max-w-[max(13rem,min(100%,calc(100dvh-24rem)))] short:mx-0 short:max-w-xs">
-        {/* The fleet. Ships still in the tray are shown flat; ones already on
-            the board get their own rotate control, so a ship can be turned
-            after it is down without lifting it and placing it again — which was
-            the only way to change your mind before. */}
-        <div className="flex items-center gap-2 pt-4 short:pt-0">
-          {SHIPS.map((size, k) => {
-            const down = k < placed.length
-            const current = k === placed.length
-            const pips = (
-              <span className="flex gap-[3px]">
-                {Array.from({ length: size }, (_, c) => (
-                  <span
-                    key={c}
-                    className="block h-3 w-3 rounded-[3px]"
-                    style={{
-                      backgroundColor: current
-                        ? 'var(--t-accent)'
-                        : down
-                          ? 'var(--t-accent)'
-                          : 'var(--t-line-strong)',
-                    }}
-                  />
-                ))}
-              </span>
-            )
+        {/* Only ships that are actually *down* appear here, as full-size rotate
+            controls.
 
-            if (!down) {
+            There used to be a flat row of pips for the ones still waiting,
+            which was doing two jobs badly: it showed a ship-shaped thing that
+            was not on the board and could not be touched, right next to
+            identical-looking things that were and could. The header already
+            says what is coming next ("3 long"), so the row is now unambiguously
+            "here is what you have placed, tap to turn it" — and has the room to
+            look like a control instead of a legend. */}
+        <div className="flex flex-wrap items-center gap-2 pt-4 short:pt-0">
+          <AnimatePresence initial={false} mode="popLayout">
+            {placed.map((ship, k) => {
+              const across = ship[1] - ship[0] === 1
               return (
                 <motion.div
-                  key={k}
-                  animate={{ opacity: 1, scale: current ? 1 : 0.94 }}
+                  key={`${ship[0]}-${ship.length}`}
+                  layout
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.85 }}
                   transition={spring}
-                  className="flex"
                 >
-                  {pips}
+                  <Press
+                    cue={null}
+                    depth={0.93}
+                    onPress={() => rotateAt(k)}
+                    aria-label={`Rotate the ${ship.length}-cell ship, currently ${across ? 'across' : 'down'}`}
+                    className="flex h-11 items-center gap-2.5 rounded-xl border border-line bg-surface px-3"
+                  >
+                    {/* The hull itself, turning with the ship, so the control
+                        reads as the vessel rather than as a row of squares. */}
+                    <motion.span
+                      className="flex gap-[3px]"
+                      animate={{ rotate: across ? 0 : 90 }}
+                      transition={spring}
+                    >
+                      {Array.from({ length: ship.length }, (_, c) => (
+                        <span
+                          key={c}
+                          className="block h-3.5 w-3.5 rounded-[4px]"
+                          style={{ backgroundColor: 'var(--t-accent)' }}
+                        />
+                      ))}
+                    </motion.span>
+
+                    <motion.svg
+                      viewBox="0 0 14 14"
+                      animate={{ rotate: across ? 0 : 90 }}
+                      transition={spring}
+                      className="h-4 w-4 shrink-0"
+                      aria-hidden
+                    >
+                      <path
+                        d="M2.5 7 A4.5 4.5 0 1 1 7 11.5 M2.5 7 L2.5 4.2 M2.5 7 L5.3 7"
+                        fill="none"
+                        stroke="var(--t-muted)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </motion.svg>
+                  </Press>
                 </motion.div>
               )
-            }
+            })}
+          </AnimatePresence>
 
-            const across = placed[k][1] - placed[k][0] === 1
-            return (
-              <Press
-                key={k}
-                cue={null}
-                depth={0.9}
-                onPress={() => rotateAt(k)}
-                aria-label={`Rotate the ${size}-cell ship, currently ${across ? 'across' : 'down'}`}
-                className="flex items-center gap-1.5 rounded-lg border border-line px-2 py-1.5"
-              >
-                {pips}
-                {/* A quarter turn on the glyph itself, so the control shows the
-                    ship's current lie rather than just naming the action. */}
-                <motion.svg
-                  viewBox="0 0 12 12"
-                  animate={{ rotate: across ? 0 : 90 }}
-                  transition={spring}
-                  className="h-3 w-3 shrink-0"
-                  aria-hidden
-                >
-                  <path
-                    d="M2 6 h6 M6 3.4 L8.8 6 L6 8.6"
-                    fill="none"
-                    stroke="var(--t-muted)"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </motion.svg>
-              </Press>
-            )
-          })}
           <span className="chrome text-muted/60 ml-auto">
             {placed.length}/{SHIPS.length}
           </span>

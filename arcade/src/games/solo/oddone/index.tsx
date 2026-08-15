@@ -10,19 +10,42 @@ import type { SoloApi, SoloModule } from '../types'
  * One square is a slightly different shade. Find it before the clock, and the
  * difference shrinks every level until it is barely there.
  *
- * The odd colour is produced with color-mix against the *accent* and the *ink*
- * rather than a fixed palette, which means the game automatically works in
- * whichever accent the player picked and in either theme, with no per-colour
- * tuning.
+ * The squares are a **fixed** colour, and that is the whole point.
+ *
+ * They used to be the player's accent, with the odd one mixed towards the
+ * theme's ink — which meant the game was a different game depending on the
+ * settings. Mixing near-black into the near-white of the mono accent is a huge,
+ * obvious shift; mixing the same percentage into a saturated red barely moves
+ * it at all. The difficulty was decided by a colour picked for looks, and one
+ * accent made the later levels unplayable while another made them trivial.
+ *
+ * So the board owns its own colour: one neutral, faintly cool grey that sits
+ * comfortably on both a near-black and a near-white page and belongs to no
+ * accent. Nothing else on the screen changes, so the theme still looks like the
+ * theme — only the puzzle stops depending on it.
  */
 
 const MAX_LEVEL_TIME = 6_000
 const MIN_LEVEL_TIME = 3_200
 
-/** Percentage of ink mixed into the accent. Smaller is harder. */
+/** Lightness and chroma of the board. Identical in every theme and accent. */
+const BASE_L = 0.62
+const BASE_C = 0.035
+const BASE_H = 250
+
+/**
+ * How far the odd square's lightness is shifted, in OKLCH.
+ *
+ * OKLCH rather than sRGB because its lightness is roughly *perceptually*
+ * uniform: a step of 0.02 looks like the same size of step wherever it lands,
+ * which is what makes the difficulty curve mean something. The same step in
+ * sRGB is far more visible in the light half of the range than the dark.
+ */
 function deltaFor(level: number): number {
-  return Math.max(2.2, 30 * Math.pow(0.86, level - 1))
+  return Math.max(0.0055, 0.09 * Math.pow(0.86, level - 1))
 }
+
+const shade = (l: number) => `oklch(${l.toFixed(4)} ${BASE_C} ${BASE_H})`
 
 function sizeFor(level: number): number {
   if (level <= 2) return 2
@@ -44,6 +67,10 @@ function OddOnePlay({ api, ready }: { api: SoloApi; ready: boolean }) {
   const count = size * size
   // Re-rolled per level; `count` is in the deps so growing the grid moves it.
   const odd = useMemo(() => Math.floor(Math.random() * count), [level, count])
+  // Lighter or darker, chosen per level. The shift is perceptually symmetric in
+  // OKLCH, so this varies the look without varying the difficulty — and stops
+  // "find the pale one" from being a strategy that skips the search.
+  const lighter = useMemo(() => Math.random() < 0.5, [level])
   const delta = deltaFor(level)
   const duration = timeFor(level)
 
@@ -75,8 +102,8 @@ function OddOnePlay({ api, ready }: { api: SoloApi; ready: boolean }) {
   const boardRef = useRef<HTMLDivElement>(null)
   useGridKeys(boardRef, size, true)
 
-  const base = 'var(--t-accent)'
-  const oddColour = `color-mix(in srgb, var(--t-ink) ${delta.toFixed(2)}%, var(--t-accent))`
+  const base = shade(BASE_L)
+  const oddColour = shade(lighter ? BASE_L + delta : BASE_L - delta)
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-3 sm:px-6">

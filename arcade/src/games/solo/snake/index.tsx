@@ -14,11 +14,11 @@ const SPEEDUP_MS = 4
 /** Snake thickness in cell units. */
 const THICKNESS = 0.74
 /**
- * Corner radius in cell units. Just under half a cell: large enough that a turn
- * is a visible arc rather than a chamfer, small enough that the body still
- * clearly follows the grid it is actually moving on.
+ * Corner radius in cell units. Half a cell is the most an arc can take without
+ * cutting into the neighbouring segment, so the body rounds a corner as fully
+ * as the geometry allows and the whole snake banks rather than hinging.
  */
-const CORNER_R = 0.46
+const CORNER_R = 0.5
 
 /**
  * How the head sweeps through a corner, as fractions of one tick.
@@ -32,8 +32,8 @@ const CORNER_R = 0.46
  * Tied to the tick rather than to wall-clock time, so it stays in step with the
  * movement at every speed and always finishes inside its own cell.
  */
-const TURN_DELAY = 0.25
-const TURN_SPAN = 0.6
+const TURN_DELAY = 0.1
+const TURN_SPAN = 0.9
 
 type Cell = { x: number; y: number }
 
@@ -286,7 +286,11 @@ function SnakePlay({ api }: { api: SoloApi }) {
           // so the corner starts and finishes gently instead of snapping into
           // and out of a constant spin.
           const p = Math.max(0, Math.min(1, (t - TURN_DELAY) / TURN_SPAN))
-          const eased = p * p * (3 - 2 * p)
+          // Smootherstep, not smoothstep. Both start and end at zero velocity,
+          // but this one also starts and ends at zero *acceleration* — there is
+          // no instant where the rate of turn jumps, which is exactly what the
+          // eye reads as stiffness at the two ends of a sweep.
+          const eased = p * p * p * (p * (p * 6 - 15) + 10)
           const deg = turnFrom.current + turnDiff.current * eased
 
           const hx = cells[0].x + 0.5 + move.x * t
@@ -313,14 +317,21 @@ function SnakePlay({ api }: { api: SoloApi }) {
         style={{ maxWidth: 'min(100%, calc(100dvh - 16rem))' }}
       >
         <svg viewBox={`0 0 ${GRID} ${GRID}`} className="absolute inset-0 h-full w-full">
+          {/* The apple lands, then breathes. A board where the only moving
+              thing is the snake reads as a diagram; one slow idle gives the
+              whole screen a pulse to sit against. */}
           <motion.circle
+            key={`${apple.x},${apple.y}`}
             cx={apple.x + 0.5}
             cy={apple.y + 0.5}
             r={THICKNESS / 2}
             fill="var(--t-accent)"
             initial={{ scale: 0.4, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={springSnap}
+            animate={{ scale: [1, 1.11, 1], opacity: 1 }}
+            transition={{
+              opacity: springSnap,
+              scale: { duration: 1.9, repeat: Infinity, ease: 'easeInOut' },
+            }}
             style={{ transformOrigin: `${apple.x + 0.5}px ${apple.y + 0.5}px` }}
           />
 
@@ -342,9 +353,20 @@ function SnakePlay({ api }: { api: SoloApi }) {
               rectangle changing axis. They are cut out in the board colour, so
               they work in either theme and in every accent without tuning. */}
           <g ref={headRef}>
-            <circle r={THICKNESS / 2} fill="var(--t-ink)" />
-            <circle cx={0.1} cy={-0.155} r={0.082} fill="var(--t-surface)" />
-            <circle cx={0.1} cy={0.155} r={0.082} fill="var(--t-surface)" />
+            {/* A swallow, on the frame an apple goes down: the head swells and
+                settles. Keyed on the count so it replays per apple, and inside
+                the rotated group so it follows the head without fighting the
+                transform written there every frame. */}
+            <motion.g
+              key={length}
+              initial={length > 3 ? { scale: 1.34 } : false}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 17, mass: 0.5 }}
+            >
+              <circle r={THICKNESS / 2} fill="var(--t-ink)" />
+              <circle cx={0.1} cy={-0.155} r={0.082} fill="var(--t-surface)" />
+              <circle cx={0.1} cy={0.155} r={0.082} fill="var(--t-surface)" />
+            </motion.g>
           </g>
 
           {/* A ring left where an apple was taken. */}
