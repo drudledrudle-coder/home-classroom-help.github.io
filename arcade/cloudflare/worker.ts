@@ -1,4 +1,6 @@
 import { authorised, loginRequired } from '../server/login.ts'
+import { bridgeEnv } from './env.ts'
+import type { ArcadeEnv } from './env.ts'
 
 export { RoomsObject } from './RoomsObject.ts'
 export { ScoresObject } from './ScoresObject.ts'
@@ -17,24 +19,10 @@ export { ScoresObject } from './ScoresObject.ts'
  * one-way door.
  */
 
-export type Env = {
+export type Env = ArcadeEnv & {
   ASSETS: Fetcher
   ROOMS: DurableObjectNamespace
   SCORES: DurableObjectNamespace
-  ARCADE_KEY?: string
-  ARCADE_PLAYER_KEYS?: string
-}
-
-/**
- * Workers hand bindings to the request rather than putting them on the process,
- * but `server/accounts.ts` reads `process.env` so that one implementation
- * serves Netlify, the dev server and this. `nodejs_compat`
- * gives us a writable `process.env`, so the bridge is three lines and the
- * security-carrying code stays identical across all three.
- */
-function bridgeEnv(env: Env): void {
-  if (env.ARCADE_KEY !== undefined) process.env.ARCADE_KEY = env.ARCADE_KEY
-  if (env.ARCADE_PLAYER_KEYS !== undefined) process.env.ARCADE_PLAYER_KEYS = env.ARCADE_PLAYER_KEYS
 }
 
 export default {

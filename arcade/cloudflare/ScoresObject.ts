@@ -1,5 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { accountsEnabled, identify, issueSession, readSession } from '../server/accounts.ts'
+import { bridgeEnv } from './env.ts'
+import type { ArcadeEnv } from './env.ts'
 import { handleScoreRequest } from '../shared/scoreHandler.ts'
 import type { Accounts, ScoreStore, Stored } from '../shared/scoreHandler.ts'
 import type { ScoreDoc, ScoreReq } from '../shared/scores.ts'
@@ -11,7 +13,7 @@ import type { ScoreDoc, ScoreReq } from '../shared/scores.ts'
  * reads the whole of it, and two people finishing a run in the same instant is
  * exactly the race a single-threaded owner removes for free.
  */
-export class ScoresObject extends DurableObject {
+export class ScoresObject extends DurableObject<ArcadeEnv> {
   private doc: ScoreDoc | null = null
   private version = 0
   private loaded = false
@@ -45,6 +47,11 @@ export class ScoresObject extends DurableObject {
   }
 
   override async fetch(request: Request): Promise<Response> {
+    // Not redundant with the Worker's call. This object is a separate isolate
+    // with its own `process`, so without this every key lookup below comes back
+    // empty and the app reports that no accounts are configured.
+    bridgeEnv(this.env)
+
     let req: ScoreReq
     try {
       req = (await request.json()) as ScoreReq

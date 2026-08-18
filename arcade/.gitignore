@@ -7,3 +7,4 @@ dist
 # Wrangler local secrets. Never committed: this repo is public.
 .dev.vars
 .wrangler/
+dist-preview
