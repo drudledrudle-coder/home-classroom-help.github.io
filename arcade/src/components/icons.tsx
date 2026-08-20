@@ -104,3 +104,20 @@ export function TrophyIcon({ size = 18, className }: IconProps) {
     </svg>
   )
 }
+
+export function PauseIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M9.5 5v14M14.5 5v14" />
+    </svg>
+  )
+}
+
+export function WarnIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M12 4.5 21 19.5H3z" />
+      <path d="M12 10v4M12 16.6v.1" />
+    </svg>
+  )
+}

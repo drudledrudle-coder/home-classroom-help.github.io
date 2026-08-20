@@ -30,7 +30,7 @@ const GROW_BY = 5.5
 
 type Row = { x: number; w: number }
 
-function StackPlay({ api }: { api: SoloApi }) {
+function StackPlay({ api, running }: { api: SoloApi; running: boolean }) {
   const sound = useSound()
   const [rows, setRows] = useState<Row[]>(() => {
     const saved = loadResume<Row[]>('stack')
@@ -74,7 +74,10 @@ function StackPlay({ api }: { api: SoloApi }) {
   // to the DOM node. Routing it through React state would re-render the whole
   // tower sixty times a second for one moving rectangle.
   useEffect(() => {
-    if (dead.current) return
+    // Stopping the slider is the whole of pausing Stack — the block sweeps
+    // across on its own, so leaving this running would have it drifting to the
+    // far wall while the settings are open.
+    if (dead.current || !running) return
     let raf = 0
     let last = performance.now()
 
@@ -104,7 +107,9 @@ function StackPlay({ api }: { api: SoloApi }) {
 
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
-  }, [])
+    // `last` is re-anchored on every restart, so the frame that resumes cannot
+    // apply the whole paused duration as one enormous step.
+  }, [running])
 
   const drop = useCallback(() => {
     if (dead.current) return

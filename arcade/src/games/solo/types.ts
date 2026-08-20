@@ -36,17 +36,25 @@ export type SoloModule = {
   Play: ComponentType<{
     api: SoloApi
     /**
-     * False while the opening 3-2-1 is still running.
+     * Whether the run's clock is live.
      *
-     * Locking input for the count is not enough on its own: a board that starts
-     * its *own* clock on mount runs that clock behind the overlay, so the player
-     * watches Recall play a sequence they cannot answer, or loses three seconds
-     * of an Odd One Out timer before they may touch anything. Any game that
-     * schedules something on a timer must wait for this; games that only react
-     * to input can ignore it, since input is already blocked.
+     * False during the opening 3-2-1, and false again whenever the player
+     * pauses. Both are the same requirement from the board's side: stop
+     * advancing, and do not schedule anything that would advance later.
      *
-     * Always true for `selfStart` games, which have no count in front of them.
+     * Locking input is not enough on its own. A board that runs its *own* clock
+     * keeps running behind an overlay — the player watches Recall play a
+     * sequence they cannot answer, or a paused Snake walks into a wall while
+     * the settings are open. Any game with a timer, an interval or a
+     * self-scheduling loop must gate it on this. Games that only ever react to
+     * input can ignore it, since input is blocked for them anyway.
+     *
+     * Resuming must not hand out free progress either: a level timer has to
+     * carry its remaining time across the pause rather than restart.
+     *
+     * Always true for `selfStart` games until the player pauses, since they
+     * have no count in front of them.
      */
-    ready: boolean
+    running: boolean
   }>
 }

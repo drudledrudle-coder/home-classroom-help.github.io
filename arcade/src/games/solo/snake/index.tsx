@@ -128,7 +128,7 @@ function roundedPath(pts: Cell[], radius: number): string {
  * The path is written straight to the SVG element from a rAF loop, so the
  * smoothing costs one attribute write per frame rather than a React render.
  */
-function SnakePlay({ api }: { api: SoloApi }) {
+function SnakePlay({ api, running }: { api: SoloApi; running: boolean }) {
   const sound = useSound()
   const [apple, setApple] = useState<Cell>({ x: 6, y: 3 })
   const [started, setStarted] = useState(false)
@@ -184,7 +184,10 @@ function SnakePlay({ api }: { api: SoloApi }) {
 
   /* -- simulation ---------------------------------------------------------- */
   useEffect(() => {
-    if (!started || dead.current) return
+    // `running` stops the snake dead while the pause sheet is up. Blocking
+    // input is not enough here: this loop schedules its own next step, so a
+    // paused snake would keep walking and hit a wall behind the settings.
+    if (!started || dead.current || !running) return
 
     const step = () => {
       const cells = body.current
@@ -260,7 +263,7 @@ function SnakePlay({ api }: { api: SoloApi }) {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [started, apple, api, sound])
+  }, [started, running, apple, api, sound])
 
   /* -- rendering ----------------------------------------------------------- */
   useEffect(() => {

@@ -70,7 +70,7 @@ function makeGate(y: number, index: number): Gate {
   return { y, openings: [{ x: Math.random() * (100 - width), w: width }], passed: false }
 }
 
-function RollPlay({ api }: { api: SoloApi }) {
+function RollPlay({ api, running }: { api: SoloApi; running: boolean }) {
   const sound = useSound()
   const boardRef = useRef<HTMLDivElement>(null)
   const ballRef = useRef<HTMLDivElement>(null)
@@ -90,10 +90,21 @@ function RollPlay({ api }: { api: SoloApi }) {
     true,
   )
 
+  // Read inside the loops below rather than listed as a dependency. The effect
+  // that drives the course also *seeds* it, and its cleanup removes every gate
+  // — so restarting it on pause would hand the player a brand new course, which
+  // is both jarring and a way to dodge a crash that was about to happen.
+  const live = useRef(running)
+  live.current = running
+
   // Keyboard steering, for desktop.
   useEffect(() => {
     const held = new Set<string>()
     const onDown = (e: KeyboardEvent) => {
+      // This listener is the game's own rather than the shared input hook, so
+      // the global lock does not cover it. Without this the ball still steers
+      // while the pause sheet is up.
+      if (!live.current) return
       if (!['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) return
       e.preventDefault()
       held.add(e.code)
@@ -128,6 +139,15 @@ function RollPlay({ api }: { api: SoloApi }) {
     let last = performance.now()
 
     const loop = (now: number) => {
+      // Frozen, but still mounted and still drawing: re-anchoring `last` each
+      // frame means resuming carries no accumulated time, so the course does
+      // not lurch forward by however long the sheet was open.
+      if (!live.current) {
+        last = now
+        raf = requestAnimationFrame(loop)
+        return
+      }
+
       const dt = Math.min(50, now - last) / 1000
       last = now
       const speed = speedAt(passed.current)

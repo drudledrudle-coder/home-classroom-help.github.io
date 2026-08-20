@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GameId, RoomErrorCode } from '../../shared/protocol'
 import { Button } from '../components/Button'
 import { CodeChip } from '../components/CodeChip'
 import { ConnectionMeter } from '../components/ConnectionMeter'
+import { GameMenu } from '../components/GameMenu'
 import { GameShell } from '../components/GameShell'
 import { TopBar } from '../components/TopBar'
 import { GAMES } from '../games/registry'
@@ -49,6 +50,7 @@ export function Room({
   onLocked: () => void
 }) {
   const match = useMatch(transport, GAMES)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   // An expired token or a changed site key is not a room error to read — it is
   // a locked door, so hand it back to the app to re-gate.
@@ -144,7 +146,11 @@ export function Room({
   return (
     <Screen>
       <TopBar
-        onBack={onExit}
+        // Not `onExit`. In a room the back arrow used to drop the seat on the
+        // first tap, which is the one mis-tap in this app that costs somebody
+        // *else* their game. It opens the options instead; leaving lives in
+        // there behind a confirmation.
+        onBack={() => setMenuOpen(true)}
         center={match.isBot ? <BotBadge /> : <CodeChip code={match.code} />}
         // Solo has no network, so a connection meter there would be noise.
         trailing={
@@ -187,12 +193,37 @@ export function Room({
           )}
         </motion.div>
       </AnimatePresence>
+
+      {/* Deliberately not called "Paused". Nothing here can stop the other
+          player's clock, and a sheet that says paused while the match runs on
+          behind it would be a lie the player only discovers on returning. */}
+      <GameMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        title="Game options"
+        note={
+          match.isBot
+            ? 'The bot waits for you, so nothing is running while this is open.'
+            : 'The match is still running — this does not pause your opponent.'
+        }
+        showDifficulty={match.isBot}
+        leave={
+          match.isBot
+            ? { label: 'Leave the match', onLeave: onExit }
+            : {
+                label: 'Leave the room',
+                confirmLabel: 'Leave anyway',
+                warning: 'The other player loses the match and goes back to waiting.',
+                onLeave: onExit,
+              }
+        }
+      />
     </Screen>
   )
 }
 
 function Screen({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-[100dvh] flex-col overflow-hidden">{children}</div>
+  return <div className="relative flex h-[100dvh] flex-col overflow-hidden">{children}</div>
 }
 
 function BotBadge() {

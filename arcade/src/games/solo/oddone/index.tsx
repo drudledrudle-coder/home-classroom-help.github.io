@@ -59,7 +59,7 @@ function timeFor(level: number): number {
   return Math.max(MIN_LEVEL_TIME, MAX_LEVEL_TIME - (level - 1) * 180)
 }
 
-function OddOnePlay({ api, ready }: { api: SoloApi; ready: boolean }) {
+function OddOnePlay({ api, running }: { api: SoloApi; running: boolean }) {
   const [level, setLevel] = useState(1)
   const sound = useSound()
 
@@ -77,13 +77,25 @@ function OddOnePlay({ api, ready }: { api: SoloApi; ready: boolean }) {
   // Running out of time ends the run. Without this, the hard levels turn into
   // an untimed staring contest rather than a score chase.
   //
-  // Held until the countdown clears, or the first level would burn three of its
-  // seconds behind an overlay the player cannot tap through.
+  // The remaining time is carried by hand rather than left to the timeout,
+  // because this effect re-runs on every pause. Restarting the full duration
+  // each time would make pausing a way to never time out at all; resetting it
+  // to zero would end the run on the first pause. So the level's own budget is
+  // banked on the way out and resumed on the way back in.
+  const left = useRef(duration)
   useEffect(() => {
-    if (!ready) return
-    const id = setTimeout(() => api.end(), duration)
-    return () => clearTimeout(id)
-  }, [level, duration, ready, api])
+    left.current = duration
+  }, [level, duration])
+
+  useEffect(() => {
+    if (!running) return
+    const startedAt = Date.now()
+    const id = setTimeout(() => api.end(), left.current)
+    return () => {
+      clearTimeout(id)
+      left.current = Math.max(0, left.current - (Date.now() - startedAt))
+    }
+  }, [level, running, api])
 
   const choose = useCallback(
     (index: number) => {

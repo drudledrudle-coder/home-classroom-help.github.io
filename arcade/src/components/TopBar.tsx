@@ -6,7 +6,7 @@ import { useSound } from '../lib/sound'
 import { useTheme } from '../lib/theme'
 import { useMe } from '../net/account'
 import { AccentPicker } from './AccentPicker'
-import { BackIcon, MoonIcon, SoundOffIcon, SoundOnIcon, SunIcon, TrophyIcon } from './icons'
+import { BackIcon, MoonIcon, PauseIcon, SoundOffIcon, SoundOnIcon, SunIcon, TrophyIcon } from './icons'
 import { Press } from './Press'
 
 function IconToggle({
@@ -37,6 +37,7 @@ export function TopBar({
   center,
   trailing,
   onBoard,
+  onPause,
 }: {
   onBack?: () => void
   center?: ReactNode
@@ -49,6 +50,12 @@ export function TopBar({
    * to decide between instead of one list of games.
    */
   onBoard?: () => void
+  /**
+   * Pause the run. Given its own control rather than left to the back arrow:
+   * nobody looking to change the volume mid-game thinks to press back, and a
+   * pause that is hard to find is a pause that does not exist.
+   */
+  onPause?: () => void
 }) {
   const { theme, toggle } = useTheme()
   const sound = useSound()
@@ -96,6 +103,11 @@ export function TopBar({
 
         <div className="flex flex-1 shrink-0 items-center justify-end gap-0.5">
           {trailing}
+          {onPause ? (
+            <IconToggle onClick={onPause} label="Pause">
+              <PauseIcon />
+            </IconToggle>
+          ) : null}
           {onBoard ? (
             <IconToggle onClick={onBoard} label="Leaderboard">
               <TrophyIcon />

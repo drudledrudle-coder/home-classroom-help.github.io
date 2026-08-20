@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../components/Button'
 import { Countdown } from '../components/Countdown'
+import { GameMenu } from '../components/GameMenu'
 import { Counter } from '../components/Counter'
 import { TopBar } from '../components/TopBar'
 import { bestIn, readBest, submitScore } from '../games/solo/bests'
@@ -12,6 +13,7 @@ import { SOLO_GAMES } from '../games/solo/registry'
 import type { SoloApi, SoloId } from '../games/solo/types'
 import { spring, springSoft } from '../lib/motion'
 import { useSound } from '../lib/sound'
+import { holdInput } from '../lib/input'
 import { COUNTDOWN_MS } from '../net/shellState'
 
 /**
@@ -81,6 +83,37 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
   // with, so the only thing that matters is that the count restarts with the run.
   const startedAt = useRef(Date.now())
   const [counting, setCounting] = useState(!module.meta.selfStart)
+  const [paused, setPaused] = useState(false)
+
+  // Time spent paused, pushed back into the start so the clock reads as if the
+  // pause never happened. Without this a player could open the settings during
+  // the 3-2-1 and come back to a count that had already expired — and any game
+  // reading `elapsed()` would jump forward by however long the sheet was up.
+  const pausedAt = useRef(0)
+
+  const pause = useCallback(() => {
+    setPaused((was) => {
+      if (!was) pausedAt.current = Date.now()
+      return true
+    })
+  }, [])
+
+  const resume = useCallback(() => {
+    setPaused((was) => {
+      if (was && pausedAt.current) startedAt.current += Date.now() - pausedAt.current
+      pausedAt.current = 0
+      return false
+    })
+  }, [])
+
+  // Boards listen on the window, so a swipe or an arrow key would still reach
+  // the game with the sheet on top of it. `pointer-events: none` on the board
+  // cannot help with that, and does nothing at all for the keyboard.
+  useEffect(() => {
+    if (!paused) return
+    return holdInput()
+  }, [paused])
+
   const soloClock = useMemo(
     () => ({
       serverNow: () => Date.now(),
@@ -92,7 +125,7 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
   )
 
   useEffect(() => {
-    if (!counting) return
+    if (!counting || paused) return
     let raf = 0
     const tick = () => {
       if (soloClock.countdown() <= 0) return setCounting(false)
@@ -100,7 +133,7 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [counting, soloClock, run])
+  }, [counting, paused, soloClock, run])
 
   const again = useCallback(() => {
     ended.current = false
@@ -114,6 +147,8 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
     setOver(false)
     setRun((n) => n + 1)
     startedAt.current = Date.now()
+    pausedAt.current = 0
+    setPaused(false)
     if (!module.meta.selfStart) setCounting(true)
   }, [id, module.meta.selfStart])
 
@@ -121,7 +156,14 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
 
   return (
     <div className="relative flex h-[100dvh] flex-col overflow-hidden">
-      <TopBar onBack={onExit} center={<Title text={module.meta.title} />} />
+      <TopBar
+        // Back pauses rather than quits. Losing a run to a mis-tap while
+        // reaching for the volume is the same class of mistake as dropping a
+        // room, and the way out is one tap inside the sheet.
+        onBack={over ? onExit : pause}
+        onPause={over ? undefined : pause}
+        center={<Title text={module.meta.title} />}
+      />
 
       <div className="mx-auto flex w-full max-w-md items-end justify-between px-4 pt-3 sm:px-6 short:pt-1">
         <div className="flex flex-col gap-1">
@@ -139,15 +181,31 @@ export function SoloPlay({ id, onExit }: { id: SoloId; onExit: () => void }) {
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           className="flex min-h-0 flex-1 flex-col"
-          style={counting ? { pointerEvents: 'none' } : undefined}
+          // Blocks the pointer during the count and the pause alike. The sheet
+          // covers the board anyway; this also stops a stray tap landing on the
+          // board underneath as the sheet animates away.
+          style={counting || paused ? { pointerEvents: 'none' } : undefined}
         >
-          <Play key={run} api={api} ready={!counting} />
+          <Play key={run} api={api} running={!counting && !paused} />
         </div>
         {/* Solo has no shared clock, so the beat is local — but it is the same
             component and the same three seconds as a versus match. Games that
             wait for a first input supply their own beat and opt out. */}
         {!module.meta.selfStart ? <Countdown clock={soloClock} /> : null}
       </div>
+
+      <GameMenu
+        open={paused}
+        onClose={resume}
+        title="Paused"
+        note="Your run is frozen — the clock picks up where it left off."
+        leave={{
+          label: 'Quit run',
+          confirmLabel: 'Quit — this run is lost',
+          warning: 'The score so far will not be kept or posted.',
+          onLeave: onExit,
+        }}
+      />
 
       <AnimatePresence>
         {over ? (

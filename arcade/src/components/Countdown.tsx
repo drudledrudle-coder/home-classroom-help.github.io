@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import type { GameClock } from '../games/types'
-import { setInputLocked } from '../lib/input'
+import { holdInput } from '../lib/input'
 import { useSound } from '../lib/sound'
 
 /**
@@ -29,12 +29,12 @@ export function Countdown({ clock }: { clock: GameClock }) {
   }, [clock])
 
   // Hold the global input lock for exactly as long as this is on screen, and
-  // always release it on unmount — leaving it raised would silently deaden
-  // every board in the app.
+  // always release it on unmount — leaving it held would silently deaden every
+  // board in the app.
   const counting = left > 0
   useEffect(() => {
-    setInputLocked(counting)
-    return () => setInputLocked(false)
+    if (!counting) return
+    return holdInput()
   }, [counting])
 
   // 3, 2, 1 — then "Go" for the last beat rather than a bare zero.

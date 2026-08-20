@@ -124,6 +124,8 @@ function tileStyle(value: number, dark: boolean): { background: string; color: s
 
 type Saved = { tiles: Tile[]; score: number }
 
+// No `running` gate needed: Merge has no clock of its own and only ever
+// reacts to a swipe or a key, both of which the global input hold stops.
 function MergePlay({ api }: { api: SoloApi }) {
   const sound = useSound()
   const { theme } = useTheme()

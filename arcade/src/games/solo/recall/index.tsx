@@ -12,7 +12,7 @@ const LEAD_IN_MS = 620
 
 type Phase = 'watch' | 'repeat'
 
-function RecallPlay({ api, ready }: { api: SoloApi; ready: boolean }) {
+function RecallPlay({ api, running }: { api: SoloApi; running: boolean }) {
   const sound = useSound()
   /** Rounds drive everything; the sequence is grown once per round. */
   const [roundNo, setRoundNo] = useState(1)
@@ -32,17 +32,44 @@ function RecallPlay({ api, ready }: { api: SoloApi; ready: boolean }) {
 
   useEffect(() => clearTimers, [clearTimers])
 
+  // One append per round, however many times the effect below re-runs. Pausing
+  // toggles `running`, and without this latch every resume would quietly add
+  // another pad to the sequence — the run would get harder for pausing.
+  const dealt = useRef(0)
+  // Read inside the effect without making it a dependency, so answering a pad
+  // never reschedules the playback.
+  const phaseRef = useRef<Phase>('watch')
+  phaseRef.current = phase
+
   // Appends one pad and plays the whole sequence back. Scheduled up front
   // rather than chained, so a slow frame cannot drift the lights off the beat.
   useEffect(() => {
     if (dead.current) return
     // The whole game is watch-then-repeat, so playing the sequence out behind
-    // the countdown would show the player something they cannot answer — and
-    // the first round is the one they would miss.
-    if (!ready) return
+    // the countdown — or behind the pause sheet — would show the player
+    // something they cannot answer, and the first round is the one they would
+    // miss.
+    if (!running) {
+      clearTimers()
+      setLit(null)
+      return
+    }
 
-    sequence.current = [...sequence.current, Math.floor(Math.random() * PADS)]
-    setLength(sequence.current.length)
+    const fresh = dealt.current !== roundNo
+    if (fresh) {
+      dealt.current = roundNo
+      sequence.current = [...sequence.current, Math.floor(Math.random() * PADS)]
+      setLength(sequence.current.length)
+    }
+
+    // Resuming part-way through answering picks up where it stopped. Only the
+    // watch phase replays, and only because the sheet covered the board while
+    // it was up: a player who paused mid-flash saw nothing, so replaying is
+    // what makes the pause fair rather than a punishment. It is the same
+    // sequence rather than a new one, so the most a pause can ever buy is a
+    // second look at a pattern already shown.
+    if (!fresh && phaseRef.current === 'repeat') return
+
     setPhase('watch')
     step.current = 0
     clearTimers()
@@ -64,10 +91,10 @@ function RecallPlay({ api, ready }: { api: SoloApi; ready: boolean }) {
         LEAD_IN_MS + sequence.current.length * (SHOW_MS + GAP_MS),
       ),
     )
-    // `ready` belongs here: the first run bails out during the countdown, and
-    // without it in the deps the effect would never run again and the game
+    // `running` belongs here: the first round bails out during the countdown,
+    // and without it in the deps the effect would never run again and the game
     // would simply never start.
-  }, [roundNo, ready, clearTimers, sound])
+  }, [roundNo, running, clearTimers, sound])
 
   const press = useCallback(
     (pad: number) => {
